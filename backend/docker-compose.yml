@@ -1,0 +1,112 @@
+version: '3.8'
+
+# ============================================================
+# CHATBOT TUYỂN SINH ĐH VINH — Docker Compose Infrastructure
+# Khởi chạy: docker-compose up -d
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # Qdrant — Vector Database (Self-hosted)
+  # ----------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: chatbot_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"     # REST API
+      - "6334:6334"     # gRPC (dùng khi prefer_grpc=True)
+    volumes:
+      - qdrant_data:/qdrant/storage    # Dùng Named Volume thay vì Bind Mount để tránh lỗi IO trên Windows
+    environment:
+      QDRANT__LOG_LEVEL: INFO
+
+  # ----------------------------------------------------------
+  # Redis 7 — Session Store & Cache
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: chatbot_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --loglevel notice
+    volumes:
+      - redis_data:/data                  # Dùng Named Volume
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ----------------------------------------------------------
+  # PostgreSQL 16 — LLM Config & Admin Database
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: chatbot_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: chatbot_db
+      POSTGRES_USER: chatbot_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatbot_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot_user -d chatbot_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------
+  # FastAPI Backend — Tích hợp nhân Linux & Poppler-utils
+  # ----------------------------------------------------------
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: chatbot_backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Map toàn bộ thư mục backend vào container để code reload tự động khi dev
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      # Ghi đè Qdrant & Redis host để dùng service name trong Docker network
+      QDRANT_HOST: qdrant
+      REDIS_URL: redis://redis:6379
+      # Gemini model — luôn override để tránh fallback vào model cũ đã bị deprecated
+      GEMINI_MODEL: gemini-2.5-flash
+      # Kích hoạt hot-reload cho Uvicorn bên trong container
+      ENV: development
+      # Database URL trong Docker network (dùng hostname "postgres")
+      DATABASE_URL: postgresql+asyncpg://chatbot_user:${POSTGRES_PASSWORD:-chatbot_pass}@postgres:5432/chatbot_db
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir api --reload-dir core --reload-dir indexing --reload-dir agent --reload-dir llm --reload-dir db
+    depends_on:
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  qdrant_data:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local

@@ -1,0 +1,19 @@
+# Thư mục môi trường ảo Python
+venv/
+env/
+.env
+
+# Thư mục lưu trữ database cục bộ
+qdrant_storage/
+redis_data/
+
+# Dữ liệu tạm thời và logs
+logs/
+tmp_images/
+__pycache__/
+*.pyc
+.pytest_cache/
+.cache/
+
+# Dữ liệu uploads (được mount qua volume, không nên build vào image)
+data/uploads/
