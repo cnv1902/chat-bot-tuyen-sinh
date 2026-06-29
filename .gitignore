@@ -2,3 +2,5 @@
 backend/.env
 backend/production_dockerfile
 backend/production_docker-compose.yml
+backend/Dockerfile
+backend/docker-compose.yml
