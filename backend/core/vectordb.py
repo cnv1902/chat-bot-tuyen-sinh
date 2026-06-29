@@ -386,3 +386,74 @@ def upsert_points(
             "[VectorDB] Lỗi upsert points: %s", str(e), exc_info=True
         )
         return total_upserted
+
+
+# ---------------------------------------------------------------------------
+# Delete By Source File — Phục vụ Admin xóa tài liệu
+# ---------------------------------------------------------------------------
+
+def delete_points_by_source_file(
+    source_file: str,
+    collection_name: str | None = None,
+) -> int:
+    """
+    Xóa toàn bộ vector chunks có metadata source_file khớp với tên file.
+    
+    Sử dụng Qdrant delete_points() với filter theo payload field "source_file".
+    Idempotent: gọi nhiều lần không bị lỗi (nếu đã xóa rồi thì count = 0).
+
+    Args:
+        source_file:     Tên file cần xóa (ví dụ: "DeAn2026.pdf").
+        collection_name: Tên collection (mặc định từ env).
+
+    Returns:
+        Số lượng points đã xóa (lấy từ Qdrant info trước và sau xóa).
+        Trả về 0 nếu có lỗi hoặc không có points nào.
+    """
+    name = collection_name or get_collection_name()
+
+    try:
+        client = _get_client()
+
+        # Xây filter theo source_file (keyword match)
+        points_filter = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="source_file",
+                    match=qmodels.MatchValue(value=source_file),
+                )
+            ]
+        )
+
+        # Đếm số points trước khi xóa để report kết quả
+        count_before = client.count(
+            collection_name=name,
+            count_filter=points_filter,
+            exact=True,
+        ).count
+
+        if count_before == 0:
+            logger.info(
+                "[VectorDB] Không tìm thấy points nào với source_file=%r — bỏ qua.",
+                source_file,
+            )
+            return 0
+
+        # Thực hiện xóa
+        client.delete(
+            collection_name=name,
+            points_selector=qmodels.FilterSelector(filter=points_filter),
+            wait=True,
+        )
+
+        logger.info(
+            "[VectorDB] Đã xóa %d points có source_file=%r khỏi collection '%s'.",
+            count_before, source_file, name,
+        )
+        return count_before
+
+    except Exception as e:
+        logger.error(
+            "[VectorDB] Lỗi xóa points theo source_file=%r: %s", source_file, str(e), exc_info=True
+        )
+        return 0

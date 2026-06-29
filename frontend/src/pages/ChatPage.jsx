@@ -104,7 +104,7 @@ export default function ChatPage() {
             Đại học Vinh
           </h2>
           <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', marginTop: '4px', letterSpacing: '1px' }}>
-            BAN TUYỂN SINH 2026
+            THÔNG TIN TUYỂN SINH
           </span>
         </div>
 

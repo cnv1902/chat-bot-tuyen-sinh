@@ -1,2 +1,4 @@
 **/.cache/
 backend/.env
+backend/production_dockerfile
+backend/production_docker-compose.yml

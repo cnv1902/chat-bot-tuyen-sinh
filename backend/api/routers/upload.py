@@ -23,6 +23,8 @@ from db.crud import (
     create_uploaded_document,
     update_uploaded_document_status,
     get_all_uploaded_documents,
+    get_uploaded_document,
+    delete_uploaded_document,
 )
 
 logger = logging.getLogger(__name__)
@@ -225,3 +227,91 @@ async def list_uploaded_documents(
         }
         for doc in docs
     ]
+
+
+@router.delete(
+    "/upload/documents/{doc_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Xóa tài liệu và toàn bộ dữ liệu liên quan",
+)
+async def delete_document(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Xóa triệt để một tài liệu theo 4 bước tuần tự:
+    1. Xóa toàn bộ vector chunks trong Qdrant theo source_file.
+    2. Xóa file PDF/DOCX gốc tại data/uploads/.
+    3. Xóa các file ảnh tạm do OCR sinh ra tại tmp_images/.
+    4. Xóa bản ghi lịch sử trong PostgreSQL.
+    """
+    import glob
+    from core.vectordb import delete_points_by_source_file
+
+    # --- Bước 0: Lấy thông tin tài liệu ---
+    doc = await get_uploaded_document(db, doc_id)
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy tài liệu ID={doc_id}.",
+        )
+
+    if doc.status == "processing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tài liệu đang được xử lý (processing). Vui lòng đợi hoàn tất trước khi xóa.",
+        )
+
+    filename = doc.filename
+    logger.info("[Delete] Bắt đầu xóa tài liệu id=%d | file=%r", doc_id, filename)
+    summary = {}
+
+    # --- Bước 1: Xóa vector chunks trong Qdrant ---
+    try:
+        deleted_vectors = delete_points_by_source_file(filename)
+        summary["qdrant_vectors_deleted"] = deleted_vectors
+        logger.info("[Delete] Qdrant: đã xóa %d vectors.", deleted_vectors)
+    except Exception as e:
+        logger.error("[Delete] Qdrant xóa lỗi: %s", e)
+        summary["qdrant_error"] = str(e)
+
+    # --- Bước 2: Xóa file gốc ---
+    file_path = UPLOAD_DIR / filename
+    if file_path.exists():
+        try:
+            file_path.unlink()
+            summary["file_deleted"] = True
+            logger.info("[Delete] Đã xóa file gốc: %s", file_path)
+        except Exception as e:
+            logger.error("[Delete] Xóa file gốc lỗi: %s", e)
+            summary["file_error"] = str(e)
+    else:
+        summary["file_deleted"] = False
+        logger.warning("[Delete] File gốc không tồn tại (có thể đã bị xóa trước): %s", file_path)
+
+    # --- Bước 3: Xóa các ảnh tạm trong tmp_images ---
+    tmp_dir = _BACKEND_ROOT / "tmp_images"
+    stem = Path(filename).stem
+    pattern = str(tmp_dir / f"{stem}_page_*.jpg")
+    tmp_files = glob.glob(pattern)
+    deleted_tmp_count = 0
+    for f in tmp_files:
+        try:
+            Path(f).unlink()
+            deleted_tmp_count += 1
+        except Exception as e:
+            logger.warning("[Delete] Không xóa được ảnh tạm %s: %s", f, e)
+    summary["tmp_images_deleted"] = deleted_tmp_count
+    logger.info("[Delete] Xóa %d ảnh tạm khớp pattern: %s", deleted_tmp_count, pattern)
+
+    # --- Bước 4: Xóa bản ghi DB ---
+    await delete_uploaded_document(db, doc_id)
+    summary["db_record_deleted"] = True
+    logger.info("[Delete] Đã xóa bản ghi DB id=%d.", doc_id)
+
+    return {
+        "message": f"Tài liệu '{filename}' đã được xóa hoàn toàn.",
+        "doc_id": doc_id,
+        "filename": filename,
+        "summary": summary,
+    }

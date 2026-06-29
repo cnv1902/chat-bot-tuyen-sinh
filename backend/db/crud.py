@@ -7,7 +7,7 @@ Caller chịu trách nhiệm quản lý session (dùng Depends(get_db) trong rou
 """
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from db.models import LLMProvider, LLMSlot
 
 logger = logging.getLogger(__name__)
@@ -168,3 +168,39 @@ async def get_all_uploaded_documents(
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+async def get_uploaded_document(
+    db: AsyncSession,
+    doc_id: int,
+) -> "UploadedDocument | None":
+    """
+    Lấy thông tin 1 tài liệu theo ID.
+    Trả về None nếu không tìm thấy.
+    """
+    from db.models import UploadedDocument
+    result = await db.execute(
+        select(UploadedDocument).where(UploadedDocument.id == doc_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def delete_uploaded_document(
+    db: AsyncSession,
+    doc_id: int,
+) -> bool:
+    """
+    Xóa bản ghi tài liệu khỏi bảng uploaded_documents theo ID.
+    Trả về True nếu xóa thành công, False nếu không tìm thấy bản ghi.
+    """
+    from db.models import UploadedDocument
+    result = await db.execute(
+        delete(UploadedDocument).where(UploadedDocument.id == doc_id)
+    )
+    await db.commit()
+    deleted = result.rowcount > 0
+    if deleted:
+        logger.info("[DB] Đã xóa uploaded_document id=%d", doc_id)
+    else:
+        logger.warning("[DB] delete_uploaded_document: id=%d không tồn tại", doc_id)
+    return deleted

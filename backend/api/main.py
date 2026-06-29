@@ -259,7 +259,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_parse_cors_origins(),
     allow_credentials=True,          # Cho phép cookie/Authorization header
-    allow_methods=["GET", "POST"],   # Chỉ cho phép method cần thiết (không PUT/DELETE)
+    allow_methods=["GET", "POST", "DELETE", "PUT", "OPTIONS"],   # Cho phép các method cần thiết bao gồm DELETE cho quản lý tài liệu
     allow_headers=[
         "Content-Type",
         "Authorization",
