@@ -286,3 +286,123 @@ def _get_col(row: pd.Series, candidates: list[str]) -> str:
         if val and val not in ("nan", "none", "-", ""):
             return str(val).strip()
     return ""
+
+# ---------------------------------------------------------------------------
+# Boundary Chunking (Nối Chunk Xuyên Trang)
+# ---------------------------------------------------------------------------
+
+def create_boundary_chunks(page_chunks_by_page: list[list[dict]]) -> list[dict]:
+    """
+    Tạo các chunk ranh giới từ các trang liền kề.
+    Lấy phần tử cuối cùng của trang i và phần tử đầu tiên của trang i+1.
+    """
+    boundary_chunks = []
+    
+    for i in range(len(page_chunks_by_page) - 1):
+        page_i_chunks = page_chunks_by_page[i]
+        page_next_chunks = page_chunks_by_page[i+1]
+        
+        if not page_i_chunks or not page_next_chunks:
+            continue
+            
+        # Lấy chunk cuối của trang i (bỏ qua chunk tổng hợp table_summary)
+        last_chunk = next((c for c in reversed(page_i_chunks) if c["metadata"].get("chunk_type") != "table_summary"), None)
+        # Lấy chunk đầu của trang i+1 (bỏ qua chunk tổng hợp table_summary)
+        first_chunk = next((c for c in page_next_chunks if c["metadata"].get("chunk_type") != "table_summary"), None)
+        
+        if last_chunk and first_chunk:
+            content_i = last_chunk["content"]
+            content_next = first_chunk["content"]
+            
+            boundary_content = f"{content_i}\n{content_next}"
+            
+            meta = last_chunk["metadata"].copy()
+            meta["chunk_type"] = "boundary"
+            
+            boundary_chunks.append({
+                "id": f"boundary_{i+1}_{i+2}",
+                "content": boundary_content,
+                "metadata": meta,
+                "_debug_last_type": last_chunk["metadata"].get("chunk_type"),
+                "_debug_first_type": first_chunk["metadata"].get("chunk_type")
+            })
+            
+    return boundary_chunks
+
+async def _async_verify_workflow(boundary_chunks: list[dict]) -> dict[str, bool]:
+    if not boundary_chunks:
+        return {}
+        
+    from llm import _load_provider
+    import json
+    
+    provider = await _load_provider("ocr")
+    
+    payload = [{"id": c["id"], "text": c["content"]} for c in boundary_chunks]
+    prompt = f"""Xác định mỗi đoạn dưới đây có thực sự là 1 ý/câu hoàn chỉnh bị cắt 
+ngang trang hay là 2 nội dung không liên quan bị ghép. Trả về JSON list đầy đủ,
+đúng số lượng item đã cho, theo đúng id:
+[{{ "id": "...", "is_real_continuation": true/false }}]
+
+Dữ liệu: {json.dumps(payload, ensure_ascii=False)}"""
+
+    raw = await provider.complete_json(
+        messages=[{"role": "user", "content": prompt}],
+        system="Bạn là trợ lý AI chuyên xác minh tính liên tục của văn bản.",
+        max_tokens=1500
+    )
+    
+    # Strip markdown json code fences if any
+    import re
+    raw_cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE | re.MULTILINE).strip()
+    
+    try:
+        results = json.loads(raw_cleaned)
+        if isinstance(results, dict) and "results" in results:
+            results = results["results"]
+        elif isinstance(results, dict):
+            return {str(k): bool(v) for k, v in results.items()}
+            
+        if isinstance(results, list):
+            return {str(r.get('id')): bool(r.get('is_real_continuation', False)) for r in results if 'id' in r}
+        return {}
+    except Exception as e:
+        logger.warning("[Verify/Boundary] Parse thất bại, coi toàn bộ batch là chưa xác nhận: %s\nRaw output: %s", e, raw_cleaned[:200])
+        return {}
+
+def verify_boundary_sync(boundary_chunks: list[dict], main_loop) -> dict[str, bool]:
+    """
+    Hàm gọi đồng bộ từ process_pdf. Bao bọc toàn bộ bằng vòng try-except mức ngoài cùng.
+    Sử dụng main_loop của FastAPI để thực thi _async_verify_workflow.
+    """
+    import asyncio
+    import concurrent.futures
+    
+    if not boundary_chunks:
+        return {}
+        
+    try:
+        future = asyncio.run_coroutine_threadsafe(
+            _async_verify_workflow(boundary_chunks), main_loop
+        )
+        return future.result(timeout=60.0)
+    except concurrent.futures.TimeoutError:
+        logger.warning("[Verify/Boundary] Quá thời gian (Timeout 60s) khi xác minh. Fallback an toàn.")
+        return {}
+    except Exception as e:
+        logger.warning("[Verify/Boundary] Bỏ qua xác minh chunk ranh giới do lỗi nội bộ: %s", e)
+        return {}
+
+def apply_verification(all_original_chunks: list[dict], boundary_chunks: list[dict], verify_results: dict[str, bool]) -> list[dict]:
+    final_chunks = list(all_original_chunks)
+    
+    for chunk in boundary_chunks:
+        verdict = verify_results.get(chunk['id'])
+        if verdict is True:
+            valid_chunk = {
+                "content": chunk["content"],
+                "metadata": chunk["metadata"]
+            }
+            final_chunks.append(valid_chunk)
+            
+    return final_chunks

@@ -50,7 +50,14 @@ from qdrant_client import QdrantClient
 from indexing.pdf_to_images import pdf_to_images
 from indexing.vision_extractor import extract_page_with_gemini  # backward-compat; delegate sang get_ocr_provider() trong DB
 from indexing.validator import validate_markdown
-from indexing.chunker import extract_tables_from_markdown, table_to_semantic_chunks, text_chunks
+from indexing.chunker import (
+    extract_tables_from_markdown, 
+    table_to_semantic_chunks, 
+    text_chunks,
+    create_boundary_chunks,
+    verify_boundary_sync,
+    apply_verification
+)
 from indexing.indexer import get_embed_model, index_chunks
 from indexing.text_utils import normalize_scope, repair_mojibake, repair_text_tree
 from core.vectordb import setup_collection
@@ -101,6 +108,7 @@ def process_pdf(
     logger.info("[1/5] Tạo %d trang ảnh.", len(images))
 
     all_chunks: list[dict] = []
+    page_chunks_by_page: list[list[dict]] = []
     needs_review: list[dict] = []
 
     # ── Bước 2-4: Xử lý từng trang ──
@@ -157,6 +165,7 @@ def process_pdf(
             page_chunks.extend(table_to_semantic_chunks(tbl, meta))
 
         page_chunks.extend(text_chunks(content, meta))
+        page_chunks_by_page.append(page_chunks)
         all_chunks.extend(page_chunks)
 
         logger.info(
@@ -167,6 +176,20 @@ def process_pdf(
             len([c for c in page_chunks if c.get("metadata", {}).get("chunk_type") == "paragraph"]),
             len(page_chunks),
         )
+
+    # ── Bước Boundary Chunking ──
+    from indexing.vision_extractor import _MAIN_LOOP
+    if _MAIN_LOOP is not None and _MAIN_LOOP.is_running():
+        boundary_chunks = create_boundary_chunks(page_chunks_by_page)
+        if boundary_chunks:
+            logger.info("[4.5/5] Đã tạo %d boundary chunks. Chờ LLM xác minh (Timeout 60s)...", len(boundary_chunks))
+            verify_results = verify_boundary_sync(boundary_chunks, _MAIN_LOOP)
+            verified_count = sum(1 for v in verify_results.values() if v is True)
+            skipped_count = len(boundary_chunks) - verified_count
+            logger.info("[4.5/5] Xác minh xong: Tổng %d boundary chunks | %d chunks hợp lệ (True) được nối | %d chunks bị bỏ qua (False/Lỗi)", len(boundary_chunks), verified_count, skipped_count)
+            all_chunks = apply_verification(all_chunks, boundary_chunks, verify_results)
+    else:
+        logger.warning("[4.5/5] Bỏ qua Boundary Chunking do không tìm thấy Event Loop hợp lệ.")
 
     # ── Bước 5: Index toàn bộ chunks ──
     logger.info("[5/5] Upsert %d chunks vào Qdrant collection '%s'...", len(all_chunks), collection)
