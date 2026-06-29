@@ -1062,30 +1062,30 @@ export default function AdminPage() {
                               <button
                                 id={`btn-delete-doc-${doc.id}`}
                                 onClick={() => handleDeleteDoc(doc)}
-                                disabled={isDeleting || isProcessing}
-                                title={isProcessing ? 'Không thể xóa khi đang xử lý' : `Xóa vĩnh viễn "${doc.filename}"`}
+                                disabled={isDeleting}
+                                title={isProcessing ? 'Hủy và xóa vĩnh viễn' : `Xóa vĩnh viễn "${doc.filename}"`}
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '6px',
                                   padding: '7px 14px',
-                                  backgroundColor: isDeleting || isProcessing ? '#f1f5f9' : '#fef2f2',
-                                  color: isDeleting || isProcessing ? '#94a3b8' : '#dc2626',
-                                  border: `1.5px solid ${isDeleting || isProcessing ? '#e2e8f0' : '#fecaca'}`,
+                                  backgroundColor: isDeleting ? '#f1f5f9' : '#fef2f2',
+                                  color: isDeleting ? '#94a3b8' : '#dc2626',
+                                  border: `1.5px solid ${isDeleting ? '#e2e8f0' : '#fecaca'}`,
                                   fontWeight: 'bold',
                                   fontSize: '0.78rem',
-                                  cursor: isDeleting || isProcessing ? 'not-allowed' : 'pointer',
+                                  cursor: isDeleting ? 'not-allowed' : 'pointer',
                                   transition: 'all 0.15s'
                                 }}
                                 onMouseOver={e => {
-                                  if (!isDeleting && !isProcessing) {
+                                  if (!isDeleting) {
                                     e.currentTarget.style.backgroundColor = '#dc2626';
                                     e.currentTarget.style.color = '#ffffff';
                                     e.currentTarget.style.borderColor = '#dc2626';
                                   }
                                 }}
                                 onMouseOut={e => {
-                                  if (!isDeleting && !isProcessing) {
+                                  if (!isDeleting) {
                                     e.currentTarget.style.backgroundColor = '#fef2f2';
                                     e.currentTarget.style.color = '#dc2626';
                                     e.currentTarget.style.borderColor = '#fecaca';
@@ -1113,7 +1113,7 @@ export default function AdminPage() {
                 fontSize: '0.82rem',
                 color: '#854d0e'
               }}>
-                <strong>⚠️ Lưu ý:</strong> Tài liệu đang ở trạng thái <strong>"Đang xử lý"</strong> sẽ bị khóa nút xóa cho đến khi hoàn tất. Thao tác xóa không thể hoàn tác.
+                <strong>⚠️ Lưu ý:</strong> Bạn có thể xóa tài liệu ngay cả khi đang <strong>"Đang xử lý"</strong>. Khi đó tiến trình xử lý ngầm sẽ bị hủy bỏ ngay lập tức. Thao tác xóa không thể hoàn tác.
               </div>
             </div>
           )}

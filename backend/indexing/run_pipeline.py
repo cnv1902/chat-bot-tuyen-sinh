@@ -74,6 +74,7 @@ def process_pdf(
     fallback_year: int,
     fallback_doc_type: str,
     tmp_dir: str = "./tmp_images",
+    is_aborted: callable = None,
 ) -> dict:
     """
     Xử lý một file PDF qua toàn bộ 5 bước pipeline.
@@ -113,6 +114,10 @@ def process_pdf(
 
     # ── Bước 2-4: Xử lý từng trang ──
     for i, img_path in enumerate(images):
+        if is_aborted and is_aborted():
+            logger.warning("❌ [Pipeline] Tín hiệu HỦY BỎ: Tài liệu đã bị xóa. Dừng xử lý trang %d.", i + 1)
+            raise RuntimeError("Pipeline bị hủy bỏ do tài liệu đã bị xóa.")
+
         page_num = i + 1
         logger.info("── Trang %d/%d: %s ──", page_num, len(images), Path(img_path).name)
 
@@ -182,6 +187,10 @@ def process_pdf(
     if _MAIN_LOOP is not None and _MAIN_LOOP.is_running():
         boundary_chunks = create_boundary_chunks(page_chunks_by_page)
         if boundary_chunks:
+            if is_aborted and is_aborted():
+                logger.warning("❌ [Pipeline] Tín hiệu HỦY BỎ trước khi Verify. Dừng lại.")
+                raise RuntimeError("Pipeline bị hủy bỏ do tài liệu đã bị xóa.")
+
             logger.info("[4.5/5] Đã tạo %d boundary chunks. Chờ LLM xác minh (Timeout 60s)...", len(boundary_chunks))
             verify_results = verify_boundary_sync(boundary_chunks, _MAIN_LOOP)
             verified_count = sum(1 for v in verify_results.values() if v is True)
@@ -192,6 +201,10 @@ def process_pdf(
         logger.warning("[4.5/5] Bỏ qua Boundary Chunking do không tìm thấy Event Loop hợp lệ.")
 
     # ── Bước 5: Index toàn bộ chunks ──
+    if is_aborted and is_aborted():
+        logger.warning("❌ [Pipeline] Tín hiệu HỦY BỎ trước khi Upsert. Dừng lại.")
+        raise RuntimeError("Pipeline bị hủy bỏ do tài liệu đã bị xóa.")
+
     logger.info("[5/5] Upsert %d chunks vào Qdrant collection '%s'...", len(all_chunks), collection)
     indexed_count = index_chunks(all_chunks, qdrant, model, collection)
     logger.info("[5/5] ✅ Đã index %d/%d chunks.", indexed_count, len(all_chunks))

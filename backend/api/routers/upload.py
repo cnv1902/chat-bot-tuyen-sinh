@@ -86,6 +86,20 @@ async def process_file_background(
         main_loop = asyncio.get_running_loop()
         set_main_loop(main_loop)
 
+        # Định nghĩa callback is_aborted kiểm tra DB (file có bị xoá chưa)
+        def check_abort() -> bool:
+            from db.connection import AsyncSessionLocal
+            from db.crud import get_uploaded_document
+            async def _check():
+                async with AsyncSessionLocal() as db_session:
+                    doc_check = await get_uploaded_document(db_session, doc_id)
+                    return doc_check is None # Abort nếu record đã bị xóa
+            try:
+                future = asyncio.run_coroutine_threadsafe(_check(), main_loop)
+                return future.result(timeout=2.0)
+            except Exception:
+                return False
+
         # Chạy pipeline CPU-heavy trong thread pool để không block event loop.
         result = await asyncio.to_thread(
             process_pdf,
@@ -95,6 +109,7 @@ async def process_file_background(
             fallback_year=year,
             fallback_doc_type=fallback_doc_type,
             tmp_dir=str(_BACKEND_ROOT / "tmp_images"),
+            is_aborted=check_abort,
         )
 
         duration = time.time() - start_time
@@ -122,8 +137,15 @@ async def process_file_background(
     except Exception as e:
         duration = time.time() - start_time
         error_msg = str(e)
+        
+        # Nếu đang xử lý mà bị xóa, có thể sinh ra FileNotFoundError (do file vừa bị xóa) 
+        # hoặc RuntimeError từ các checkpoint is_aborted(). Ta nên catch êm ái thay vì in Traceback.
+        if (check_abort() is True) or ("hủy bỏ" in error_msg.lower()):
+            logger.info("[Background] 🛑 Tiến trình ngầm đã hủy bỏ an toàn cho file %s do tài liệu bị xóa.", file_path)
+            return  # Kết thúc sớm luôn, không cần update DB vì DB record đã mất
+
         logger.error(
-            "[Background] ❌ LỖI TRONG QUÁ TRÌNH XỮ LÝ FILE %s: %s",
+            "[Background] ❌ LỖI TRONG QUÁ TRÌNH XỬ LÝ FILE %s: %s",
             file_path, error_msg, exc_info=True,
         )
         # Cập nhật trạng thái thất bại vào DB
@@ -257,9 +279,10 @@ async def delete_document(
         )
 
     if doc.status == "processing":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Tài liệu đang được xử lý (processing). Vui lòng đợi hoàn tất trước khi xóa.",
+        logger.warning(
+            "[Delete] Tài liệu ID=%d đang 'processing'. "
+            "Xóa record DB sẽ kích hoạt tín hiệu HỦY BỎ trong tiến trình ngầm.", 
+            doc_id
         )
 
     filename = doc.filename
