@@ -23,7 +23,7 @@ bind = "0.0.0.0:8000"
 # Số worker = 2 × CPU cores + 1 là quy tắc phổ biến cho I/O-bound workloads.
 # Với container giới hạn 4 CPUs, mặc định là 4 workers.
 # Override qua biến môi trường GUNICORN_WORKERS nếu cần.
-workers = int(os.getenv("GUNICORN_WORKERS", "4"))
+workers = int(os.getenv("GUNICORN_WORKERS", "2"))
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000       # Số connections đồng thời tối đa mỗi worker
 
@@ -35,19 +35,25 @@ keepalive = 5           # Keep-alive connections
 graceful_timeout = 30   # Thời gian chờ worker hoàn tất request trước khi kill
 
 # ---------------------------------------------------------------------------
-# PRELOAD APP — Giải quyết vấn đề load model 4 lần
+# PRELOAD APP
 # ---------------------------------------------------------------------------
-# preload_app = True: Gunicorn sẽ import và khởi tạo ứng dụng trong process
-# master TRƯỚC KHI fork các worker. Nhờ đó:
-#   1. Embedding model (BAAI/bge-m3 ~570MB) chỉ load MỘT LẦN trong master.
-#   2. Các worker con thừa kế bộ nhớ của master qua cơ chế Copy-on-Write (COW)
-#      của Linux → tiết kiệm đáng kể RAM và thời gian khởi động.
-#   3. Startup event (lifespan) của FastAPI vẫn chạy trong từng worker riêng
-#      để khởi tạo các async resource (DB pool, Redis...) không thể share qua fork.
+# preload_app = False (Mặc định của Gunicorn):
 #
-# LƯU Ý: Các kết nối DB/Redis KHÔNG được tạo ở module level (chỉ trong lifespan)
-# vì file descriptors không share an toàn qua fork. Code hiện tại đã đúng chuẩn này.
-preload_app = True
+# VIỆC DÙNG preload_app=True ĐÃ ĐƯỢC XÁC NHẬN LÀ DEADLOCK VỚI BEG-M3:
+# HọC thực `sentence-transformers` dùng thư viện `tokenizers` viết bằng Rust.
+# Khi load model, Rust runtime tạo các thread nền (background thread). Nếu
+# Gunicorn fork() trong khi thread đang tồn tại, mutex của Rust runtime
+# sẽ bị khóa vĩnh viễn trong worker con (fork-after-thread deadlock).
+#
+# GIẢI PHÁP: Để preload_app=False. Mỗi worker tự import app và chạy lifespan
+# SAU KHI đã fork xong. Lúc này không có thread nào tồn tại khi fork,
+# nên hoàn toàn an toàn. Mỗi worker sẽ load model một lần riêng.
+#
+# VÈ RAM: với bge-m3 ~570MB/worker và RAM 7.3GB:
+#   - 2 workers: ~1.1GB model + app overhead → AN TOÀN
+#   - 4 workers: ~2.3GB model + overhead   → CÓTHỂ TIGHT
+# Mặc định 2, override qua GUNICORN_WORKERS nếu server có nhiều RAM hơn.
+preload_app = False
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -70,19 +76,11 @@ default_proc_name = "chatbot_tuyensinh"
 # ---------------------------------------------------------------------------
 
 def on_starting(server):
-    """Gọi khi master process khởi động. Model sẽ được load tại đây."""
-    server.log.info("[Gunicorn] Master process đang khởi động. preload_app=True.")
-    
-    # Ép buộc master process tải model vào RAM TRƯỚC KHI fork ra các worker.
-    # Nhờ vậy, _model_instance trong core.embedder sẽ mang sẵn dữ liệu model 570MB,
-    # các worker con sẽ kế thừa vùng nhớ này qua Copy-on-Write.
-    try:
-        from core.embedder import warmup
-        server.log.info("[Gunicorn] Gọi warmup() trong Master Process để cache model...")
-        warmup()
-        server.log.info("[Gunicorn] Warmup Master hoàn tất!")
-    except Exception as e:
-        server.log.error(f"[Gunicorn] Lỗi khi warmup model trong Master: {e}")
+    """Gọi khi master process khởi động (trước khi fork)."""
+    server.log.info(
+        "[Gunicorn] Master khởi động. preload_app=False — model sẽ được "
+        "load trong từng worker sau fork để tránh fork-after-thread deadlock."
+    )
 
 
 def post_fork(server, worker):
