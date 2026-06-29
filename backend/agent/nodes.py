@@ -28,6 +28,7 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from typing import Any
 
 from llm import get_chat_provider
@@ -172,6 +173,11 @@ def classify_intent(state: AdmissionState) -> AdmissionState:
 # NODE 2: search_knowledge
 # ===========================================================================
 
+def _remove_accents(input_str: str) -> str:
+    """Loại bỏ dấu tiếng Việt để so sánh không phân biệt dấu."""
+    nfkd_form = unicodedata.normalize('NFKD', input_str)
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
 def _get_top_k(intents: list[str], queries: list[str]) -> int:
     """
     Câu hỏi liệt kê → lấy nhiều chunks hơn
@@ -181,8 +187,10 @@ def _get_top_k(intents: list[str], queries: list[str]) -> int:
         'tất cả', 'các ngành', 'danh sách', 'liệt kê',
         'có những', 'bao gồm', 'ngành nào', 'đào tạo gì', 'bao nhiêu ngành', 'những ngành nào'
     ]
-    query_text = ' '.join(queries).lower()
-    is_list_query = any(kw in query_text for kw in LIST_KEYWORDS)
+    query_text = _remove_accents(' '.join(queries).lower())
+    unaccented_keywords = [_remove_accents(kw.lower()) for kw in LIST_KEYWORDS]
+    
+    is_list_query = any(kw in query_text for kw in unaccented_keywords)
     
     if is_list_query:
         return 20  # Lấy nhiều hơn để cover toàn bộ
