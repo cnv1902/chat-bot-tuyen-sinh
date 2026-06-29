@@ -26,15 +26,52 @@ const SUGGESTED_QUESTIONS = [
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: 'Xin chào! Tôi là Trợ lý ảo tư vấn tuyển sinh chính thức của **Trường Đại học Vinh** 🏛️\n\nTôi có thể giải đáp các thông tin về:\n* 📊 **Điểm chuẩn** các năm\n* 💰 **Học phí & Học bổng**\n* 📋 **Chỉ tiêu tuyển sinh**\n* 📜 **Quy chế & Thủ tục** xét tuyển thẳng\n\nBạn cần tôi hỗ trợ thông tin gì hôm nay?'
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem('chat_messages');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing chat_messages:", e);
+      }
     }
-  ]);
+    return [
+      {
+        role: 'assistant',
+        content: 'Xin chào! Tôi là Trợ lý ảo tư vấn tuyển sinh chính thức của **Trường Đại học Vinh** 🏛️\n\nTôi có thể giải đáp các thông tin về:\n* 📊 **Điểm chuẩn** các năm\n* 💰 **Học phí & Học bổng**\n* 📋 **Chỉ tiêu tuyển sinh**\n* 📜 **Quy chế & Thủ tục** xét tuyển thẳng\n\nBạn cần tôi hỗ trợ thông tin gì hôm nay?'
+      }
+    ];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(() => {
+    const savedId = localStorage.getItem('chat_session_id');
+    if (savedId) return savedId;
+    const newId = crypto.randomUUID();
+    localStorage.setItem('chat_session_id', newId);
+    return newId;
+  });
+
+  // Lưu messages vào LocalStorage mỗi khi có thay đổi
+  useEffect(() => {
+    localStorage.setItem('chat_messages', JSON.stringify(messages));
+  }, [messages]);
+
+  const handleResetChat = () => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa cuộc trò chuyện này và bắt đầu mới?')) {
+      const newId = crypto.randomUUID();
+      localStorage.setItem('chat_session_id', newId);
+      setSessionId(newId);
+      const initialMessages = [
+        {
+          role: 'assistant',
+          content: 'Xin chào! Tôi là Trợ lý ảo tư vấn tuyển sinh chính thức của **Trường Đại học Vinh** 🏛️\n\nTôi có thể giải đáp các thông tin về:\n* 📊 **Điểm chuẩn** các năm\n* 💰 **Học phí & Học bổng**\n* 📋 **Chỉ tiêu tuyển sinh**\n* 📜 **Quy chế & Thủ tục** xét tuyển thẳng\n\nBạn cần tôi hỗ trợ thông tin gì hôm nay?'
+        }
+      ];
+      setMessages(initialMessages);
+      localStorage.setItem('chat_messages', JSON.stringify(initialMessages));
+    }
+  };
 
   const endOfMessagesRef = useRef(null);
 
@@ -172,12 +209,11 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Nút Admin hiển thị trên Mobile */}
-          <div className="mobile-admin-btn">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
-              onClick={() => navigate('/admin')}
+              onClick={handleResetChat}
               style={{
-                backgroundColor: 'rgba(255,255,255,0.2)',
+                backgroundColor: 'transparent',
                 color: '#ffffff',
                 border: '1px solid rgba(255,255,255,0.4)',
                 padding: '8px 14px',
@@ -185,17 +221,42 @@ export default function ChatPage() {
                 fontWeight: 'bold',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                cursor: 'pointer'
               }}
+              onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+              onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <Settings size={14} />
-              Quản trị
+              <Sparkles size={14} />
+              <span className="hide-on-mobile">Hội thoại mới</span>
             </button>
+
+            {/* Nút Admin hiển thị trên Mobile */}
+            <div className="mobile-admin-btn">
+              <button
+                onClick={() => navigate('/admin')}
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255,255,255,0.4)',
+                  padding: '8px 14px',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Settings size={14} />
+                Quản trị
+              </button>
+            </div>
           </div>
           <style>{`
             .mobile-admin-btn { display: none; }
             @media (max-width: 992px) {
               .mobile-admin-btn { display: block !important; }
+              .hide-on-mobile { display: none; }
             }
           `}</style>
         </header>
