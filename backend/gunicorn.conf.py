@@ -72,6 +72,17 @@ default_proc_name = "chatbot_tuyensinh"
 def on_starting(server):
     """Gọi khi master process khởi động. Model sẽ được load tại đây."""
     server.log.info("[Gunicorn] Master process đang khởi động. preload_app=True.")
+    
+    # Ép buộc master process tải model vào RAM TRƯỚC KHI fork ra các worker.
+    # Nhờ vậy, _model_instance trong core.embedder sẽ mang sẵn dữ liệu model 570MB,
+    # các worker con sẽ kế thừa vùng nhớ này qua Copy-on-Write.
+    try:
+        from core.embedder import warmup
+        server.log.info("[Gunicorn] Gọi warmup() trong Master Process để cache model...")
+        warmup()
+        server.log.info("[Gunicorn] Warmup Master hoàn tất!")
+    except Exception as e:
+        server.log.error(f"[Gunicorn] Lỗi khi warmup model trong Master: {e}")
 
 
 def post_fork(server, worker):
