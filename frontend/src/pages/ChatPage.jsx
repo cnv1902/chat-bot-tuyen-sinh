@@ -44,6 +44,7 @@ export default function ChatPage() {
   });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [sessionId, setSessionId] = useState(() => {
     const savedId = localStorage.getItem('chat_session_id');
     if (savedId) return savedId;
@@ -58,19 +59,22 @@ export default function ChatPage() {
   }, [messages]);
 
   const handleResetChat = () => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa cuộc trò chuyện này và bắt đầu mới?')) {
-      const newId = crypto.randomUUID();
-      localStorage.setItem('chat_session_id', newId);
-      setSessionId(newId);
-      const initialMessages = [
-        {
-          role: 'assistant',
-          content: 'Xin chào! Tôi là Trợ lý ảo tư vấn tuyển sinh chính thức của **Trường Đại học Vinh** 🏛️\n\nTôi có thể giải đáp các thông tin về:\n* 📊 **Điểm chuẩn** các năm\n* 💰 **Học phí & Học bổng**\n* 📋 **Chỉ tiêu tuyển sinh**\n* 📜 **Quy chế & Thủ tục** xét tuyển thẳng\n\nBạn cần tôi hỗ trợ thông tin gì hôm nay?'
-        }
-      ];
-      setMessages(initialMessages);
-      localStorage.setItem('chat_messages', JSON.stringify(initialMessages));
-    }
+    setShowResetModal(true);
+  };
+
+  const confirmResetChat = () => {
+    const newId = crypto.randomUUID();
+    localStorage.setItem('chat_session_id', newId);
+    setSessionId(newId);
+    const initialMessages = [
+      {
+        role: 'assistant',
+        content: 'Xin chào! Tôi là Trợ lý ảo tư vấn tuyển sinh chính thức của **Trường Đại học Vinh** 🏛️\n\nTôi có thể giải đáp các thông tin về:\n* 📊 **Điểm chuẩn** các năm\n* 💰 **Học phí & Học bổng**\n* 📋 **Chỉ tiêu tuyển sinh**\n* 📜 **Quy chế & Thủ tục** xét tuyển thẳng\n\nBạn cần tôi hỗ trợ thông tin gì hôm nay?'
+      }
+    ];
+    setMessages(initialMessages);
+    localStorage.setItem('chat_messages', JSON.stringify(initialMessages));
+    setShowResetModal(false);
   };
 
   const endOfMessagesRef = useRef(null);
@@ -474,6 +478,105 @@ export default function ChatPage() {
         </footer>
 
       </main>
+
+      {/* MODAL XÁC NHẬN BẮT ĐẦU MỚI HỘI THOẠI */}
+      {showResetModal && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowResetModal(false); }}
+          style={{
+            position: 'fixed', inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 10000,
+            animation: 'fadeIn 0.15s ease'
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              border: '1.5px solid #e2e8f0',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+              padding: '0',
+              width: '100%',
+              maxWidth: '400px',
+              margin: '16px',
+              animation: 'slideUp 0.2s ease',
+              overflow: 'hidden'
+            }}
+          >
+            <div style={{
+              backgroundColor: 'var(--primary-blue)',
+              padding: '20px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '36px', height: '36px',
+                backgroundColor: 'rgba(255,255,255,0.15)',
+                borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Sparkles size={18} color="#ffffff" />
+              </div>
+              <div>
+                <div style={{ color: '#ffffff', fontWeight: 800, fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Bắt đầu hội thoại mới
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: '24px' }}>
+              <p style={{ fontSize: '0.9rem', color: '#374151', marginBottom: '24px', lineHeight: '1.6' }}>
+                Bạn có chắc chắn muốn xóa lịch sử cuộc trò chuyện hiện tại và bắt đầu một phiên tư vấn mới không?
+              </p>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowResetModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    border: '1.5px solid #e2e8f0',
+                    backgroundColor: '#ffffff',
+                    color: '#374151',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                  onMouseOut={e => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                >
+                  HỦY BỎ
+                </button>
+                <button
+                  onClick={confirmResetChat}
+                  style={{
+                    padding: '10px 20px',
+                    border: '1.5px solid var(--primary-blue)',
+                    backgroundColor: 'var(--primary-blue)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.backgroundColor = '#2563eb'; e.currentTarget.style.borderColor = '#2563eb'; }}
+                  onMouseOut={e => { e.currentTarget.style.backgroundColor = 'var(--primary-blue)'; e.currentTarget.style.borderColor = 'var(--primary-blue)'; }}
+                >
+                  BẮT ĐẦU MỚI
+                </button>
+              </div>
+            </div>
+          </div>
+          <style>{`
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+          `}</style>
+        </div>
+      )}
 
     </div>
   );
