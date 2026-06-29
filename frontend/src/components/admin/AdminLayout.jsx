@@ -30,7 +30,7 @@ export default function AdminLayout() {
         />
 
         {/* PAGE CONTENT */}
-        <div className="admin-content" style={{ overflowY: 'auto' }}>
+        <div className="admin-content" style={{ overflowY: 'auto', flex: 1 }}>
           <Outlet context={{ showToast }} />
         </div>
       </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FileText, FolderOpen, Key, Cpu, Activity, ArrowLeft } from 'lucide-react';
+import { FileText, FolderOpen, Key, Cpu, Activity, ArrowLeft, Users, UserCheck } from 'lucide-react';
 
 export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
   const navigate = useNavigate();
@@ -28,6 +28,38 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
       </div>
 
       <nav className="admin-sidebar-menu">
+        <NavLink
+          to="/admin/academic-structure"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <FolderOpen size={18} />
+          Cơ cấu Đào tạo
+        </NavLink>
+        <NavLink
+          to="/admin/admission-plans"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <FileText size={18} />
+          Đề án Tuyển sinh
+        </NavLink>
+        <NavLink
+          to="/admin/staff"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <Users size={18} />
+          Quản lý Cán bộ
+        </NavLink>
+        <NavLink
+          to="/admin/candidates"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <UserCheck size={18} />
+          Quản lý Thí sinh
+        </NavLink>
         <NavLink
           to="/admin/upload"
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}

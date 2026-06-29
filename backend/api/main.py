@@ -90,6 +90,13 @@ from api.routers import chat as chat_router
 from api.routers import health as health_router
 from api.routers import upload as upload_router
 from api.routers import admin as admin_router
+from api.routers import auth as auth_router
+from api.routers import auth_google as auth_google_router
+from api.routers import academic as academic_router
+from api.routers import admission as admission_router
+from api.routers import admission_crud as admission_crud_router
+from api.routers import staff as staff_router
+from api.routers import candidate_router
 from api.schemas import ErrorResponse
 from core.embedder import warmup as embedder_warmup
 from core.vectordb import setup_collection
@@ -130,6 +137,28 @@ async def _seed_default_llm_config() -> None:
             model_name,
         )
 
+async def _seed_admin_account() -> None:
+    from sqlalchemy import select
+    from db.connection import AsyncSessionLocal
+    from db.models import Account, RoleEnum
+    from api.routers.auth import get_password_hash
+    
+    async with AsyncSessionLocal() as db:
+        stmt = select(Account).where(Account.username == "admin")
+        result = await db.execute(stmt)
+        admin = result.scalar_one_or_none()
+        
+        if not admin:
+            hashed_pw = get_password_hash("admin")
+            new_admin = Account(
+                username="admin",
+                password_hash=hashed_pw,
+                role=RoleEnum.ADMIN,
+                is_active=True
+            )
+            db.add(new_admin)
+            await db.commit()
+            logger.info("[Seed] \u2705 Đã tạo tài khoản admin mặc định.")
 
 # ---------------------------------------------------------------------------
 # [8] Lifespan Context Manager (thay thế on_event deprecated trong FastAPI 0.93+)
@@ -163,6 +192,8 @@ async def lifespan(app: FastAPI):
 
         # Seed config Gemini mặc định nếu DB còn rỗng
         await _seed_default_llm_config()
+        # Seed tài khoản admin mặc định
+        await _seed_admin_account()
     except Exception as e:
         logger.error("[Startup] [0/3] Lỗi PostgreSQL: %s", str(e))
         logger.warning("[Startup] Chat sẽ dùng Gemini hardcode nếu DB không khả dụng.")
@@ -319,8 +350,15 @@ app.include_router(chat_router.router)     # POST /api/chat
 app.include_router(health_router.router)   # GET /health
 app.include_router(upload_router.router)   # POST /api/upload
 app.include_router(admin_router.router)    # GET/POST /admin/*
+app.include_router(auth_router.router)     # POST /api/auth/login
+app.include_router(auth_google_router.router) # POST /api/auth/google
+app.include_router(academic_router.router) # POST/GET /api/academic/*
+app.include_router(admission_router.router) # POST/GET /api/admission/*
+app.include_router(admission_crud_router.router) # CRUD /api/admission_crud/*
+app.include_router(staff_router.router)    # CRUD /api/staff/*
+app.include_router(candidate_router.router) # CRUD /api/candidate/*
 
-logger.info("[Router] Đã đăng ký: POST /api/chat | GET /health | /admin/*")
+logger.info("[Router] Đã đăng ký: POST /api/chat | GET /health | /admin/* | /api/auth/* | /api/academic/* | /api/admission/*")
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +417,7 @@ if __name__ == "__main__":
         host=os.getenv("API_HOST", "0.0.0.0"),
         port=int(os.getenv("API_PORT", "8000")),
         reload=True,          # Hot-reload khi sửa code (chỉ dùng trong dev)
+        reload_excludes=["logs/*", "*.log", "*.db", "*.sqlite3"],
         log_level="info",
         access_log=True,
     )

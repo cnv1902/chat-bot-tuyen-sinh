@@ -8,7 +8,10 @@ import {
   ChevronRight,
   Info,
   HelpCircle,
-  ArrowRight
+  ArrowRight,
+  LogIn,
+  User,
+  LogOut
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -52,11 +55,35 @@ export default function ChatPage() {
     localStorage.setItem('chat_session_id', newId);
     return newId;
   });
+  const [userInfo, setUserInfo] = useState(() => {
+    const saved = localStorage.getItem('user_info');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [showUserModal, setShowUserModal] = useState(false);
 
   // Lưu messages vào LocalStorage mỗi khi có thay đổi
   useEffect(() => {
     localStorage.setItem('chat_messages', JSON.stringify(messages));
   }, [messages]);
+
+  const handleGoogleLogin = () => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      alert("Chưa cấu hình VITE_GOOGLE_CLIENT_ID");
+      return;
+    }
+    const redirectUri = `${window.location.origin}/auth/google/callback`;
+    const scope = "email profile";
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
+    window.location.href = authUrl;
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user_info');
+    setUserInfo(null);
+    setShowUserModal(false);
+  };
 
   const handleResetChat = () => {
     setShowResetModal(true);
@@ -213,7 +240,7 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', position: 'relative' }}>
             <button
               onClick={handleResetChat}
               style={{
@@ -226,7 +253,8 @@ export default function ChatPage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                borderRadius: '20px'
               }}
               onMouseOver={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
               onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -234,6 +262,100 @@ export default function ChatPage() {
               <Sparkles size={14} />
               <span className="hide-on-mobile">Hội thoại mới</span>
             </button>
+
+            {userInfo ? (
+              <button
+                onClick={() => setShowUserModal(!showUserModal)}
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(255,255,255,0.4)',
+                  padding: '8px 14px',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  borderRadius: '20px'
+                }}
+              >
+                <User size={14} />
+                <span>{userInfo.full_name || userInfo.username?.split('@')[0]}</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleGoogleLogin}
+                style={{
+                  backgroundColor: '#ffffff',
+                  color: '#333333',
+                  border: '1px solid #dcdcdc',
+                  padding: '8px 14px',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  borderRadius: '20px'
+                }}
+              >
+                <LogIn size={14} color="#db4437" />
+                <span className="hide-on-mobile">Đăng nhập Google</span>
+              </button>
+            )}
+
+            {/* Modal Thông tin User */}
+            {showUserModal && userInfo && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: '40px',
+                marginTop: '12px',
+                backgroundColor: '#ffffff',
+                color: '#333333',
+                borderRadius: '8px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                padding: '16px',
+                width: '260px',
+                zIndex: 100,
+                border: '1px solid #e2e8f0',
+                animation: 'slideUp 0.15s ease',
+                textAlign: 'left'
+              }}>
+                <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '12px' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>{userInfo.full_name || 'Hồ sơ Thí sinh'}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{userInfo.username}</div>
+                  <div style={{ fontSize: '0.75rem', marginTop: '6px', display: 'inline-block', padding: '2px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '4px', fontWeight: 'bold' }}>
+                    Role: {userInfo.role}
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    backgroundColor: '#fee2e2',
+                    color: '#dc2626',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.backgroundColor = '#fecaca'}
+                  onMouseOut={e => e.currentTarget.style.backgroundColor = '#fee2e2'}
+                >
+                  <LogOut size={14} />
+                  Đăng xuất
+                </button>
+              </div>
+            )}
 
             {/* Nút Admin hiển thị trên Mobile */}
             <div className="mobile-admin-btn">
@@ -248,11 +370,12 @@ export default function ChatPage() {
                   fontWeight: 'bold',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  borderRadius: '20px'
                 }}
               >
                 <Settings size={14} />
-                Quản trị
+                <span className="hide-on-mobile">Quản trị</span>
               </button>
             </div>
           </div>
