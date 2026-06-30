@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from db.connection import get_db
-from db.models import SubjectCombination, AdmissionMethod, AdmissionPlan
+from db.models import SubjectCombination, AdmissionMethod, AdmissionPlan, AdmissionQuota
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,11 +22,26 @@ class ComboCreate(BaseModel):
     subjects: str
 
 class PlanCreate(BaseModel):
-    year: int
-    major_code: str
-    methods: List[str]
-    combinations: List[str]
-    target_quota: Optional[int] = None
+    ma_xet_tuyen: Optional[str] = None
+    ma_nganh: Optional[str] = None
+    nam: Optional[int] = None
+    ma_phuong_thuc: Optional[str] = None
+    khoi: Optional[str] = None
+    diem_chuan: Optional[str] = None
+    hoc_ba_tbc_3_nam: Optional[str] = None
+    diem_tot_nghiep: Optional[str] = None
+    tbc_3_nam_ngoai_ngu: Optional[str] = None
+    hoc_luc_12: Optional[str] = None
+    nang_khieu: Optional[str] = None
+    mon_nhan_he_so: Optional[str] = None
+    tieng_anh: Optional[str] = None
+    ngoai_ngu: Optional[str] = None
+    he_so: Optional[str] = None
+
+class QuotaCreate(BaseModel):
+    nam: Optional[int] = None
+    ma_xet_tuyen: Optional[str] = None
+    chi_tieu: Optional[int] = None
 
 class BulkDeleteInt(BaseModel):
     ids: List[int]
@@ -151,19 +166,29 @@ async def bulk_delete_combos(payload: BulkDeleteStr, db: AsyncSession = Depends(
 # ---- PLANS ----
 @router.post("/plans")
 async def create_plan(item: PlanCreate, db: AsyncSession = Depends(get_db)):
-    logger.info(f"[CRUD] Yêu cầu thêm Đề án: Ngành {item.major_code} ({item.year})")
-    stmt = select(AdmissionPlan).where(AdmissionPlan.year == item.year, AdmissionPlan.major_code == item.major_code)
-    if (await db.execute(stmt)).scalar_one_or_none():
-        logger.warning(f"[CRUD] Thêm Đề án thất bại: Ngành {item.major_code} đã có đề án năm {item.year}")
-        raise HTTPException(400, "Đề án của ngành trong năm này đã tồn tại")
-        
+    logger.info(f"[CRUD] Yêu cầu thêm Đề án: Ngành {item.ma_nganh} ({item.nam})")
+    
+    # Ở đây ta không cần check existed (tùy vào logic), có thể 1 ngành/1 năm có nhiều phương thức
     new_plan = AdmissionPlan(
-        year=item.year, major_code=item.major_code, 
-        methods=item.methods, combinations=item.combinations, target_quota=item.target_quota
+        ma_xet_tuyen=item.ma_xet_tuyen,
+        ma_nganh=item.ma_nganh,
+        nam=item.nam,
+        ma_phuong_thuc=item.ma_phuong_thuc,
+        khoi=item.khoi,
+        diem_chuan=item.diem_chuan,
+        hoc_ba_tbc_3_nam=item.hoc_ba_tbc_3_nam,
+        diem_tot_nghiep=item.diem_tot_nghiep,
+        tbc_3_nam_ngoai_ngu=item.tbc_3_nam_ngoai_ngu,
+        hoc_luc_12=item.hoc_luc_12,
+        nang_khieu=item.nang_khieu,
+        mon_nhan_he_so=item.mon_nhan_he_so,
+        tieng_anh=item.tieng_anh,
+        ngoai_ngu=item.ngoai_ngu,
+        he_so=item.he_so
     )
     db.add(new_plan)
     await db.commit()
-    logger.info(f"[CRUD] Thêm Đề án thành công: Ngành {item.major_code}")
+    logger.info(f"[CRUD] Thêm Đề án thành công: Ngành {item.ma_nganh}")
     return {"message": "Thêm thành công"}
 
 @router.put("/plans/{id}")
@@ -174,11 +199,22 @@ async def update_plan(id: int, item: PlanCreate, db: AsyncSession = Depends(get_
         logger.warning(f"[CRUD] Cập nhật Đề án thất bại: Không tìm thấy ID {id}")
         raise HTTPException(404, "Không tìm thấy")
     
-    plan.year = item.year
-    plan.major_code = item.major_code
-    plan.methods = item.methods
-    plan.combinations = item.combinations
-    plan.target_quota = item.target_quota
+    plan.ma_xet_tuyen = item.ma_xet_tuyen
+    plan.ma_nganh = item.ma_nganh
+    plan.nam = item.nam
+    plan.ma_phuong_thuc = item.ma_phuong_thuc
+    plan.khoi = item.khoi
+    plan.diem_chuan = item.diem_chuan
+    plan.hoc_ba_tbc_3_nam = item.hoc_ba_tbc_3_nam
+    plan.diem_tot_nghiep = item.diem_tot_nghiep
+    plan.tbc_3_nam_ngoai_ngu = item.tbc_3_nam_ngoai_ngu
+    plan.hoc_luc_12 = item.hoc_luc_12
+    plan.nang_khieu = item.nang_khieu
+    plan.mon_nhan_he_so = item.mon_nhan_he_so
+    plan.tieng_anh = item.tieng_anh
+    plan.ngoai_ngu = item.ngoai_ngu
+    plan.he_so = item.he_so
+
     await db.commit()
     logger.info(f"[CRUD] Cập nhật Đề án thành công: ID {id}")
     return {"message": "Cập nhật thành công"}
@@ -205,4 +241,53 @@ async def bulk_delete_plans(payload: BulkDeleteInt, db: AsyncSession = Depends(g
     await db.commit()
     logger.info(f"[CRUD] Xóa hàng loạt Đề án thành công")
     return {"message": f"Đã xóa thành công {len(payload.ids)} mục"}
+
+
+# ---- QUOTAS ----
+@router.post("/quotas")
+async def create_quota(item: QuotaCreate, db: AsyncSession = Depends(get_db)):
+    logger.info(f"[CRUD] Yêu cầu thêm Chỉ tiêu: Mã XT {item.ma_xet_tuyen}")
+    new_quota = AdmissionQuota(**item.model_dump())
+    db.add(new_quota)
+    await db.commit()
+    logger.info(f"[CRUD] Thêm Chỉ tiêu thành công")
+    return {"message": "Thêm thành công"}
+
+@router.put("/quotas/{id}")
+async def update_quota(id: int, item: QuotaCreate, db: AsyncSession = Depends(get_db)):
+    logger.info(f"[CRUD] Yêu cầu cập nhật Chỉ tiêu ID: {id}")
+    quota = await db.get(AdmissionQuota, id)
+    if not quota:
+        raise HTTPException(404, "Không tìm thấy")
+    
+    for k, v in item.model_dump().items():
+        setattr(quota, k, v)
+    
+    await db.commit()
+    logger.info(f"[CRUD] Cập nhật Chỉ tiêu thành công")
+    return {"message": "Cập nhật thành công"}
+
+@router.delete("/quotas/{id}")
+async def delete_quota(id: int, db: AsyncSession = Depends(get_db)):
+    logger.info(f"[CRUD] Yêu cầu xóa Chỉ tiêu ID: {id}")
+    quota = await db.get(AdmissionQuota, id)
+    if not quota: 
+        logger.warning(f"[CRUD] Xóa Chỉ tiêu thất bại: Không tìm thấy ID {id}")
+        raise HTTPException(404, "Không tìm thấy")
+    await db.delete(quota)
+    await db.commit()
+    logger.info(f"[CRUD] Xóa Chỉ tiêu thành công: ID {id}")
+    return {"message": "Xóa thành công"}
+
+@router.post("/quotas/bulk-delete")
+async def bulk_delete_quotas(payload: BulkDeleteInt, db: AsyncSession = Depends(get_db)):
+    logger.info(f"[CRUD] Yêu cầu xóa hàng loạt Chỉ tiêu: {len(payload.ids)} mục")
+    if not payload.ids:
+        return {"message": "Không có mục nào được chọn để xóa"}
+    stmt = delete(AdmissionQuota).where(AdmissionQuota.id.in_(payload.ids))
+    await db.execute(stmt)
+    await db.commit()
+    logger.info(f"[CRUD] Xóa hàng loạt Chỉ tiêu thành công")
+    return {"message": f"Đã xóa thành công {len(payload.ids)} mục"}
+
 

@@ -29,20 +29,20 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
 
       <nav className="admin-sidebar-menu">
         <NavLink
+          to="/admin/documents"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <FileText size={18} />
+          Quản lý & Upload Tài liệu
+        </NavLink>
+        <NavLink
           to="/admin/academic-structure"
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
           onClick={handleNavClick}
         >
           <FolderOpen size={18} />
           Cơ cấu Đào tạo
-        </NavLink>
-        <NavLink
-          to="/admin/admission-plans"
-          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
-          onClick={handleNavClick}
-        >
-          <FileText size={18} />
-          Đề án Tuyển sinh
         </NavLink>
         <NavLink
           to="/admin/admission-codes"
@@ -69,23 +69,13 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
           Quản lý Thí sinh
         </NavLink>
         <NavLink
-          to="/admin/upload"
+          to="/admin/admission-plans"
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
           onClick={handleNavClick}
         >
           <FileText size={18} />
-          Nạp tài liệu tuyển sinh
+          Đề án Tuyển sinh
         </NavLink>
-
-        <NavLink
-          to="/admin/manage"
-          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
-          onClick={handleNavClick}
-        >
-          <FolderOpen size={18} />
-          Quản lý tài liệu
-        </NavLink>
-
         <NavLink
           to="/admin/providers"
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}

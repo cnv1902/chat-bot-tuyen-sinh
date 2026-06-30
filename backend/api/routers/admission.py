@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from db.connection import get_db
-from db.models import Major, SubjectCombination, AdmissionMethod, AdmissionPlan, AdmissionCode
+from db.models import Major, SubjectCombination, AdmissionMethod, AdmissionPlan, AdmissionCode, AdmissionQuota
 
 router = APIRouter(prefix="/api/admission", tags=["admission"])
 
@@ -224,6 +224,95 @@ async def import_plans(file: UploadFile = File(...), db: AsyncSession = Depends(
         
     return {"message": f"Đã nhập thành công {len(records)} đề án tuyển sinh."}
 
+@router.post("/import-quotas")
+async def import_quotas(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    logger.info(f"[Admission] Bắt đầu xử lý import Chỉ tiêu từ file: {file.filename}")
+    if not (file.filename.endswith('.xlsx') or file.filename.endswith('.xls') or file.filename.endswith('.csv')):
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận file định dạng Excel hoặc CSV")
+    
+    try:
+        contents = await file.read()
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Lỗi khi đọc tệp: {str(e)}")
+        
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    
+    col_map = {
+        "mã xét tuyển": "ma_xet_tuyen",
+        "năm": "nam",
+        "chỉ tiêu": "chi_tieu"
+    }
+    
+    actual_cols = {}
+    for raw_col in df.columns:
+        for vn_name, db_name in col_map.items():
+            if vn_name == raw_col:
+                actual_cols[db_name] = raw_col
+                break
+                
+    if "ma_xet_tuyen" not in actual_cols or "nam" not in actual_cols or "chi_tieu" not in actual_cols:
+        raise HTTPException(status_code=400, detail="Tệp không đủ 3 cột: Năm, Mã xét tuyển, Chỉ tiêu.")
+
+    df = df.where(pd.notnull(df), None)
+
+    count = 0
+    for _, row in df.iterrows():
+        ma_xt = str(row.get(actual_cols.get("ma_xet_tuyen", ""))).strip()
+        nam_raw = row.get(actual_cols.get("nam"))
+        chi_tieu_raw = row.get(actual_cols.get("chi_tieu"))
+        
+        if not ma_xt or ma_xt == 'None' or ma_xt == 'nan':
+            continue
+            
+        try:
+            nam = int(float(nam_raw))
+            chi_tieu = int(float(chi_tieu_raw))
+        except (ValueError, TypeError):
+            continue
+            
+        stmt = select(AdmissionQuota).where(
+            AdmissionQuota.nam == nam, 
+            AdmissionQuota.ma_xet_tuyen == ma_xt
+        )
+        result = await db.execute(stmt)
+        quota = result.scalar_one_or_none()
+        
+        if quota:
+            quota.chi_tieu = chi_tieu
+        else:
+            quota = AdmissionQuota(nam=nam, ma_xet_tuyen=ma_xt, chi_tieu=chi_tieu)
+            db.add(quota)
+        count += 1
+        
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=f"Lỗi lưu Database: {str(e)}")
+        
+    return {"message": f"Đã nạp thành công {count} chỉ tiêu."}
+
+@router.get("/quotas")
+async def get_admission_quotas(db: AsyncSession = Depends(get_db)):
+    stmt = select(AdmissionQuota).order_by(AdmissionQuota.nam.desc(), AdmissionQuota.ma_xet_tuyen)
+    result = await db.execute(stmt)
+    quotas = result.scalars().all()
+    
+    return [
+        {
+            "id": q.id,
+            "nam": q.nam,
+            "ma_xet_tuyen": q.ma_xet_tuyen,
+            "chi_tieu": q.chi_tieu
+        }
+        for q in quotas
+    ]
+
+
 @router.get("/plans")
 async def get_admission_plans(
     page: int = Query(1, ge=1),
@@ -231,9 +320,10 @@ async def get_admission_plans(
     db: AsyncSession = Depends(get_db)
 ):
     stmt = (
-        select(AdmissionPlan, AdmissionCode.program_name, Major.major_name)
+        select(AdmissionPlan, AdmissionCode.program_name, Major.major_name, AdmissionQuota.chi_tieu)
         .outerjoin(AdmissionCode, AdmissionPlan.ma_xet_tuyen == AdmissionCode.admission_code)
         .outerjoin(Major, AdmissionPlan.ma_nganh == Major.major_code)
+        .outerjoin(AdmissionQuota, (AdmissionPlan.ma_xet_tuyen == AdmissionQuota.ma_xet_tuyen) & (AdmissionPlan.nam == AdmissionQuota.nam))
         .order_by(AdmissionPlan.id.desc())
         .offset((page - 1) * size)
         .limit(size)
@@ -242,7 +332,7 @@ async def get_admission_plans(
     rows = result.all()
     
     data = []
-    for plan, program_name, major_name in rows:
+    for plan, program_name, major_name, chi_tieu in rows:
         data.append({
             "id": plan.id,
             "maXetTuyen": plan.ma_xet_tuyen,
@@ -261,7 +351,8 @@ async def get_admission_plans(
             "ngoaiNgu": plan.ngoai_ngu,
             "heSo": plan.he_so,
             "programName": program_name,
-            "majorName": major_name
+            "majorName": major_name,
+            "chiTieu": chi_tieu
         })
         
     # Get total count (optional, but good for pagination if needed)

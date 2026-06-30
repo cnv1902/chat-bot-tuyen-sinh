@@ -5,7 +5,7 @@ from markitdown import MarkItDown
 md = MarkItDown()
 
 # File đầu vào
-input_file = "Giới thiệu TDV.docx"
+input_file = "D:\chat-bot-tuyen-sinh\data\documents\Giới thiệu TDV.docx"
 
 # Chuyển sang Markdown
 result = md.convert(input_file)

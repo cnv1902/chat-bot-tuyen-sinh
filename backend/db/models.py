@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 import enum
 import uuid
 from sqlalchemy import String, Text, Boolean, DateTime, Integer, func, Uuid, Enum as SQLEnum, ForeignKey
-from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 from db.connection import Base
 
 
@@ -76,6 +76,20 @@ class LLMSlot(Base):
         return f"<LLMSlot slot={self.slot!r} provider={self.provider!r} model={self.model_name!r}>"
 
 
+class DocTypeEnum(str, enum.Enum):
+    DE_AN = "de_an"
+    QUY_CHE = "quy_che"
+    DIEM_CHUAN = "diem_chuan"
+    HUONG_DAN = "huong_dan"
+    HOC_PHI = "hoc_phi"
+    
+    LICH_SU = "lich_su"
+    GIOI_THIEU = "gioi_thieu"
+    CO_SO_VAT_CHAT = "co_so_vat_chat"
+    THANH_TICH = "thanh_tich"
+    DOI_SONG = "doi_song"
+    KHAC = "khac"
+
 class UploadedDocument(Base):
     """
     Lịch sử và trạng thái xử lý file tài liệu tuyển sinh.
@@ -97,9 +111,12 @@ class UploadedDocument(Base):
 
     id:         Mapped[int]       = mapped_column(Integer, primary_key=True, autoincrement=True)
     filename:   Mapped[str]       = mapped_column(String(255), nullable=False)
-    year:       Mapped[int]       = mapped_column(Integer, nullable=False)
+    year:       Mapped[int | None] = mapped_column(Integer, nullable=True)
+    doc_type:   Mapped[str | None] = mapped_column(String(50), nullable=True)
+    uploaded_by:Mapped[str | None] = mapped_column(String(50), nullable=True)
     status:     Mapped[str]       = mapped_column(String(20), default="processing", nullable=False)
     message:    Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime]  = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -114,6 +131,23 @@ class UploadedDocument(Base):
 
     def __repr__(self) -> str:
         return f"<UploadedDocument id={self.id} file={self.filename!r} status={self.status!r}>"
+
+class DocumentChunk(Base):
+    """
+    Các đoạn văn bản (chunks) được sinh ra từ tài liệu gốc.
+    """
+    __tablename__ = "document_chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("uploaded_documents.id", ondelete="CASCADE"))
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+
+    document = relationship("UploadedDocument", backref=backref("chunks", cascade="all, delete-orphan"))
+
+    def __repr__(self) -> str:
+        return f"<DocumentChunk id={self.id} doc_id={self.document_id} status={self.status!r}>"
 
 class RoleEnum(str, enum.Enum):
     ADMIN = "ADMIN"
@@ -258,6 +292,20 @@ class AdmissionPlan(Base):
 
     def __repr__(self) -> str:
         return f"<AdmissionPlan ma_xet_tuyen={self.ma_xet_tuyen} nam={self.nam}>"
+
+class AdmissionQuota(Base):
+    """
+    Chỉ tiêu xét tuyển của một mã xét tuyển trong một năm.
+    """
+    __tablename__ = "admission_quotas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nam: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    ma_xet_tuyen: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    chi_tieu: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AdmissionQuota ma_xet_tuyen={self.ma_xet_tuyen} chi_tieu={self.chi_tieu}>"
 
 class AdmissionCode(Base):
     """

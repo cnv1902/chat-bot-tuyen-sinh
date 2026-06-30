@@ -1,349 +1,208 @@
 """
 agent/tools.py
 ==============
-Công cụ lõi của Agent — Cổng tìm kiếm duy nhất và tính toán điểm chuẩn.
-
-Triết lý thiết kế:
-- `search_admission_info()` là điểm kiểm soát DUY NHẤT cho toàn bộ
-  luồng tìm kiếm của hệ thống. Mọi thao tác đều đi qua đây —
-  giúp tập trung logging, monitoring và dễ mock khi test.
-- Logging chi tiết ở mọi bước để debug production:
-    [1] Log filter đang được apply (field, value, type)
-    [2] Log số kết quả trả về và score range
-    [3] Log warning nếu embed thất bại
-- Tách biệt hàm embed và search để lỗi ở từng bước được xử lý riêng.
+Hai công cụ lõi phục vụ Agentic RAG.
+- Tool 1: Truy vấn thông tin cứng (dữ liệu tuyển sinh trên RAM).
+- Tool 2: Truy vấn thông tin mềm (Qdrant semantic search với 3-step fallback).
 """
 
 import logging
-from typing import Any
+from typing import Optional, Any
+from pydantic import BaseModel, Field
+from langchain_core.tools import tool
+from rapidfuzz import process, fuzz
 
+from core.cache_service import get_admission_cache, normalize_and_map_alias
 from core.embedder import embed
 from core.vectordb import search as qdrant_search
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Hằng số cấu hình Tool
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Tool 1: query_admission_data
+# ===========================================================================
 
-DEFAULT_TOP_K: int = 5
-"""Số lượng chunk trả về mỗi lần search (trước deduplicate)."""
+class QueryAdmissionDataInput(BaseModel):
+    major_or_program_name: Optional[str] = Field(None, description="Tên ngành, tên chương trình đào tạo, hoặc mã ngành thí sinh muốn hỏi (VD: 'Công nghệ thông tin', 'Sư phạm Toán chất lượng cao', '7480201'). Hãy trích xuất nguyên văn cụm từ thí sinh dùng.")
+    year: Optional[int] = Field(None, description="Năm tuyển sinh (vd: 2026)")
+    subject_group: Optional[str] = Field(None, description="Tổ hợp môn/Khối thi (vd: A00, D01)")
+    admission_method: Optional[str] = Field(None, description="Mã hoặc tên phương thức xét tuyển")
+    user_exam_score: Optional[float] = Field(None, description="Điểm thi tốt nghiệp hoặc ĐGNL của thí sinh")
+    user_transcript_score: Optional[float] = Field(None, description="Điểm xét học bạ của thí sinh")
 
-SCORE_THRESHOLD: float = 0.30
-"""
-Ngưỡng cosine similarity tối thiểu.
-Kết quả dưới ngưỡng này bị loại ngay tại Qdrant (không được trả về).
-Giá trị 0.30 là thực nghiệm tốt với bge-m3 cho tiếng Việt.
-"""
-
-# Danh sách filter key hợp lệ để log cảnh báo khi nhận key lạ
-_KNOWN_FILTER_KEYS: frozenset[str] = frozenset({"year", "doc_type"})
-
-
-# ---------------------------------------------------------------------------
-# Tool 1: Tìm kiếm thông tin tuyển sinh
-# ---------------------------------------------------------------------------
-
-def search_admission_info(
-    query: str,
-    filters: dict[str, Any] | None = None,
-    top_k: int = DEFAULT_TOP_K,
-) -> list[dict]:
-    """
-    Tìm kiếm thông tin tuyển sinh trong Vector Database.
-
-    Đây là cổng tìm kiếm DUY NHẤT của hệ thống — mọi node trong LangGraph
-    phải gọi qua hàm này thay vì gọi trực tiếp core/vectordb.py.
-    Điều này đảm bảo logging và behavior nhất quán toàn hệ thống.
-
-    Luồng xử lý nội bộ:
-        query (str)
-            │
-            ├─[1] Validate & log query
-            │
-            ├─[2] Embed query → vector[1024] via BAAI/bge-m3
-            │       └─ RuntimeError → trả về [] ngay
-            │
-            ├─[3] Log filter parameters chi tiết (field, value, type)
-            │       └─ Cảnh báo nếu có filter key không chuẩn
-            │
-            └─[4] Qdrant hybrid search (vector + hard filter)
-                    └─ Exception → trả về []
-
-    Args:
-        query:   Cụm từ tìm kiếm đã được tối ưu hóa bởi classify node.
-                 Không được rỗng.
-        filters: Dict bộ lọc metadata (từ dynamic_filters trong state).
-                 Các key hợp lệ: "year" (int), "doc_type" (str).
-                 Giá trị None cho từng key → không áp dụng filter field đó.
-                 None hoàn toàn → search không filter (toàn collection).
-        top_k:   Số kết quả tối đa muốn lấy (trước deduplicate ở node search).
-
-    Returns:
-        List[dict] các chunk tìm thấy, đã sắp xếp theo score giảm dần:
-        [
-            {
-                "content":  "Ngành Kỹ thuật phần mềm, mã ngành 7480103...",
-                "score":    0.8912,
-                "metadata": {
-                    "source_file": "tuyen_sinh_2026.pdf",
-                    "year":        2026,
-                    "doc_type":    "diem_chuan",
-                    "faculty":     "Khoa CNTT",
-                    "page":        4
-                }
-            },
-            ...
-        ]
-        Trả về [] nếu không tìm thấy kết quả hoặc có lỗi.
-    """
-    # --- [1] Validate query ---
-    if not query or not query.strip():
-        logger.warning("[Tools/Search] Query rỗng — bỏ qua search.")
-        return []
-
-    clean_query = query.strip()
-    active_filters = filters or {}
-
-    logger.info(
-        "[Tools/Search] ═══ BẮT ĐẦU TÌM KIẾM ═══\n"
-        "  Query  : %r\n"
-        "  Top-K  : %d\n"
-        "  Threshold: %.2f",
-        clean_query,
-        top_k,
-        SCORE_THRESHOLD,
-    )
-
-    # --- [2] Log filter chi tiết để debug ---
-    _log_filters(active_filters)
-
-    # --- [3] Embed query → vector ---
-    try:
-        query_vector = embed(clean_query)
-        logger.debug(
-            "[Tools/Search] Embed thành công | vector dim=%d | norm≈1.0",
-            len(query_vector),
-        )
-    except (RuntimeError, ValueError) as embed_err:
-        logger.error(
-            "[Tools/Search] Embed thất bại cho query %r: %s — trả về []",
-            clean_query,
-            str(embed_err),
-            exc_info=True,
-        )
-        return []
-
-    # --- [4] Qdrant search ---
-    try:
-        results = qdrant_search(
-            query_vector=query_vector,
-            filters=active_filters,
-            top_k=top_k,
-            score_threshold=SCORE_THRESHOLD,
-        )
-
-        # Log kết quả tổng quan
-        if results:
-            scores = [r["score"] for r in results]
-            logger.info(
-                "[Tools/Search] ═══ KẾT QUẢ ═══\n"
-                "  Tìm thấy : %d chunks\n"
-                "  Score cao nhất : %.4f\n"
-                "  Score thấp nhất: %.4f\n"
-                "  Score trung bình: %.4f",
-                len(results),
-                max(scores),
-                min(scores),
-                sum(scores) / len(scores),
-            )
-            # Log snippet ngắn của top-1 để xác nhận nội dung
-            top_content = results[0]["content"][:120].replace("\n", " ")
-            logger.debug(
-                "[Tools/Search] Top-1 preview: %r...", top_content
-            )
-        else:
-            logger.info(
-                "[Tools/Search] Không tìm thấy kết quả nào (query=%r, filter=%s).",
-                clean_query,
-                _format_filters_for_log(active_filters),
-            )
-
-        return results
-
-    except Exception as search_err:
-        logger.error(
-            "[Tools/Search] Lỗi khi search Qdrant: %s", str(search_err), exc_info=True
-        )
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Tool 2: Tính toán điều kiện đủ điểm
-# ---------------------------------------------------------------------------
-
-def calculate_eligibility(
-    user_score: float,
-    threshold: float,
-    major_name: str = "",
-    year: int | None = None,
+@tool("query_admission_data", args_schema=QueryAdmissionDataInput)
+def query_admission_data(
+    major_or_program_name: Optional[str] = None,
+    year: Optional[int] = None,
+    subject_group: Optional[str] = None,
+    admission_method: Optional[str] = None,
+    user_exam_score: Optional[float] = None,
+    user_transcript_score: Optional[float] = None,
 ) -> str:
     """
-    Tính toán và trả về kết luận tư vấn điều kiện trúng tuyển.
-
-    Hàm này là pure function (không có side effect) — dễ test và tái sử dụng.
-    Kết quả trả về dưới dạng câu văn tư vấn hoàn chỉnh để LLM có thể
-    nhúng trực tiếp vào phản hồi mà không cần xử lý thêm.
-
-    Args:
-        user_score:   Tổng điểm xét tuyển của thí sinh (theo thang điểm 30).
-                      Ví dụ: 24.5
-        threshold:    Điểm chuẩn ngành từ Qdrant (lấy từ search_results).
-                      Ví dụ: 25.0
-        major_name:   Tên ngành để cá nhân hóa câu trả lời. Tùy chọn.
-                      Ví dụ: "Kỹ thuật phần mềm"
-        year:         Năm tuyển sinh để ngữ cảnh hóa. Tùy chọn.
-                      Ví dụ: 2026
-
-    Returns:
-        Chuỗi kết luận tư vấn đầy đủ. Ví dụ:
-        - ĐỦ: "Thí sinh CÓ ĐỦ điều kiện nộp hồ sơ xét tuyển ngành Kỹ thuật phần
-               mềm (điểm xét tuyển: 24.50 ≥ điểm chuẩn năm 2026: 24.00)."
-        - THIẾU: "Thí sinh CHƯA ĐỦ điều kiện xét tuyển ngành Kỹ thuật phần mềm
-                  (điểm xét tuyển: 24.50 < điểm chuẩn năm 2026: 25.00,
-                  thiếu 0.50 điểm)."
-        - LỖI INPUT: Chuỗi mô tả lỗi validate.
-
-    Raises:
-        Không raise — mọi lỗi được trả về dưới dạng chuỗi thông báo.
+    Truy vấn thông tin cấu trúc như mã ngành, điểm chuẩn, tổ hợp xét tuyển, phương thức tuyển sinh.
+    Ưu tiên gọi tool này khi người dùng hỏi các số liệu cụ thể.
     """
-    # --- Validate input ---
-    if not isinstance(user_score, (int, float)):
-        logger.error(
-            "[Tools/Eligibility] user_score không hợp lệ: %r (type=%s)",
-            user_score, type(user_score).__name__,
-        )
-        return "Không thể tính toán: điểm xét tuyển không hợp lệ."
+    logger.info(f"[Tool] query_admission_data called with: major_or_program={major_or_program_name}, year={year}, subject_group={subject_group}, method={admission_method}, exam_score={user_exam_score}, transcript_score={user_transcript_score}")
+    
+    try:
+        cache_data = get_admission_cache()
+        if not cache_data:
+            return "Xin lỗi, hiện tại dữ liệu tuyển sinh chưa sẵn sàng. Vui lòng liên hệ Hotline tuyển sinh."
 
-    if not isinstance(threshold, (int, float)):
-        logger.error(
-            "[Tools/Eligibility] threshold không hợp lệ: %r (type=%s)",
-            threshold, type(threshold).__name__,
-        )
-        return "Không thể tính toán: điểm chuẩn tham chiếu không hợp lệ."
+        # Bước 1 (Lọc cứng)
+        # Lọc theo year
+        if year is not None:
+            cache_data = [r for r in cache_data if r.get("nam") == year]
+            
+        # Lọc theo subject_group
+        if subject_group:
+            sg_lower = subject_group.lower().strip()
+            cache_data = [r for r in cache_data if r.get("khoi") and sg_lower in r["khoi"].lower()]
+            
+        # Lọc theo admission_method
+        if admission_method:
+            am_lower = admission_method.lower().strip()
+            cache_data = [r for r in cache_data if r.get("ma_phuong_thuc") and am_lower in r["ma_phuong_thuc"].lower()]
 
-    if not (0 <= user_score <= 30):
-        logger.warning(
-            "[Tools/Eligibility] user_score=%.2f nằm ngoài thang điểm [0, 30].",
-            user_score,
-        )
-        return (
-            f"Điểm xét tuyển {user_score:.2f} nằm ngoài thang điểm hợp lệ (0–30). "
-            "Vui lòng kiểm tra lại điểm số."
-        )
+        # Lọc theo major_or_program_name bằng Combined String Fuzzy Matching
+        if major_or_program_name:
+            normalized_target = normalize_and_map_alias(major_or_program_name)
+            matched_records = []
+            
+            for r in cache_data:
+                target_str = f"{r.get('ma_nganh', '')} {r.get('ten_nganh', '')} {r.get('ten_chuong_trinh', '')}".lower()
+                score = fuzz.WRatio(normalized_target, target_str)
+                if score > 70:
+                    matched_records.append(r)
+            
+            if not matched_records:
+                logger.warning(f"[Tool] Không tìm thấy ngành phù hợp với: '{major_or_program_name}'")
+                return f"Hệ thống không tìm thấy dữ liệu cho '{major_or_program_name}'. Hãy hướng dẫn thí sinh xác nhận lại."
+                
+            cache_data = matched_records
+            logger.info(f"[Tool] Fuzzy match cho '{major_or_program_name}' -> tìm thấy {len(matched_records)} records")
+            
+        # Bước 2 (Lọc Điều kiện tối thiểu - Smart Thresholds)
+        def safe_float(val):
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+                
+        if user_exam_score is not None:
+            cache_data = [
+                r for r in cache_data 
+                if not r.get("diem_tot_nghiep") or (safe_float(r.get("diem_tot_nghiep")) is not None and safe_float(r.get("diem_tot_nghiep")) <= user_exam_score)
+            ]
+            
+        if user_transcript_score is not None:
+            cache_data = [
+                r for r in cache_data 
+                if not r.get("diem_hoc_ba") or (safe_float(r.get("diem_hoc_ba")) is not None and safe_float(r.get("diem_hoc_ba")) <= user_transcript_score)
+            ]
+            
+        # Bước 3 (Bảo vệ Token)
+        if not cache_data:
+            return "Không tìm thấy ngành học nào thỏa mãn điểm số hoặc điều kiện của bạn."
+            
+        logger.info(f"[Tool] Tìm thấy {len(cache_data)} kết quả phù hợp.")
+            
+        lines = []
+        limit = 15
+        for r in cache_data[:limit]:
+            line = f"- Ngành: {r.get('ten_nganh')} - Chương trình: {r.get('ten_chuong_trinh')} (Mã: {r.get('ma_nganh')})"
+            if r.get('institute_name'): line += f" thuộc {r.get('institute_name')}"
+            if r.get("nam"): line += f" | Năm: {r.get('nam')}"
+            if r.get("diem_chuan"): line += f" | Điểm chuẩn: {r.get('diem_chuan')}"
+            if r.get("khoi"): line += f" | Tổ hợp: {r.get('khoi')}"
+            if r.get("chi_tieu"): line += f" | Chỉ tiêu: {r.get('chi_tieu')}"
+            if r.get("diem_tot_nghiep"): line += f" | ĐK điểm tốt nghiệp: {r.get('diem_tot_nghiep')}"
+            if r.get("diem_hoc_ba"): line += f" | ĐK điểm học bạ: {r.get('diem_hoc_ba')}"
+            lines.append(line)
+            
+        if len(cache_data) > limit:
+            lines.append(f"\n... và {len(cache_data) - limit} ngành khác. Vui lòng hướng dẫn thí sinh cung cấp thêm tổ hợp môn hoặc sở thích để thu hẹp kết quả.")
 
-    if not (10 <= threshold <= 30):
-        logger.warning(
-            "[Tools/Eligibility] threshold=%.2f nằm ngoài ngưỡng hợp lý [10, 30].",
-            threshold,
-        )
-        # Vẫn tính nhưng cảnh báo — không block người dùng
+        lines.append("--- Nguồn: Cơ sở dữ liệu ---")
+        return "Đây là kết quả tra cứu:\n" + "\n".join(lines)
+        
+    except Exception as e:
+        logger.error(f"[Tool] Lỗi trong quá trình truy vấn query_admission_data: {str(e)}", exc_info=True)
+        return "Rất tiếc, đã có lỗi hệ thống khi truy vấn dữ liệu tuyển sinh."
 
-    # --- Xây dựng phần ngữ cảnh cho câu trả lời ---
-    major_part = f" ngành **{major_name}**" if major_name else ""
-    year_part = f" năm {year}" if year else ""
 
-    logger.info(
-        "[Tools/Eligibility] Tính eligibility | major=%r | "
-        "user=%.2f | threshold=%.2f | year=%s",
-        major_name or "Không rõ",
-        user_score,
-        threshold,
-        str(year) if year else "Không rõ",
-    )
+# ===========================================================================
+# Tool 2: search_unstructured_knowledge
+# ===========================================================================
 
-    # --- Tính kết quả ---
-    diff = round(user_score - threshold, 2)
+class SearchKnowledgeInput(BaseModel):
+    query: str = Field(..., description="Câu hỏi tìm kiếm semantic (vd: Điều kiện xét học bạ, sinh viên có được ở ký túc xá không)")
+    year: Optional[int] = Field(None, description="Năm áp dụng tài liệu. CHỈ ĐIỀN NẾU CHẮC CHẮN.")
+    doc_type: Optional[str] = Field(None, description="Loại tài liệu (de_an, quy_che, hoc_phi). CHỈ ĐIỀN NẾU CHẮC CHẮN.")
 
-    if diff >= 0:
-        result = (
-            f"✅ Thí sinh **CÓ ĐỦ** điều kiện nộp hồ sơ xét tuyển{major_part} "
-            f"(điểm xét tuyển: **{user_score:.2f}** ≥ điểm chuẩn{year_part}: "
-            f"**{threshold:.2f}**, vượt **{diff:.2f} điểm**)."
-        )
-        logger.info(
-            "[Tools/Eligibility] → ĐỦ ĐIỀU KIỆN | chênh lệch=+%.2f", diff
-        )
+@tool("search_unstructured_knowledge", args_schema=SearchKnowledgeInput)
+def search_unstructured_knowledge(
+    query: str,
+    year: Optional[int] = None,
+    doc_type: Optional[str] = None,
+) -> str:
+    """
+    Tìm kiếm thông tin trong các văn bản quy chế, đề án, hướng dẫn, học phí, giới thiệu trường.
+    Ưu tiên gọi tool này khi người dùng hỏi các câu hỏi chung, thủ tục, quy định, mô tả, đời sống, cơ sở vật chất.
+    """
+    logger.info(f"[Tool] search_unstructured_knowledge called: query='{query}', year={year}, doc_type={doc_type}")
+    
+    # Bước 0: Tạo vector
+    try:
+        query_vector = embed(query)
+    except Exception as e:
+        logger.error(f"[Tool] Embed failed: {str(e)}")
+        return "Xin lỗi, hiện tại không thể tìm kiếm tài liệu (Lỗi vectorization)."
+
+    # Hàm tiện ích gọi qdrant
+    def do_search(filters: dict) -> list[dict]:
+        return qdrant_search(query_vector=query_vector, filters=filters, top_k=3, score_threshold=0.3)
+
+    # Phễu nới lỏng 3 bước (Cascading Fallback)
+    
+    # Bước 1: Strict filter
+    strict_filters = {}
+    if year: strict_filters["year"] = year
+    if doc_type: strict_filters["doc_type"] = doc_type
+    
+    results = do_search(strict_filters)
+    
+    if results:
+        logger.info("[Tool] Search thành công ở Bước 1 (Strict filter).")
     else:
-        shortage = abs(diff)
-        result = (
-            f"❌ Thí sinh **CHƯA ĐỦ** điều kiện xét tuyển{major_part} "
-            f"(điểm xét tuyển: **{user_score:.2f}** < điểm chuẩn{year_part}: "
-            f"**{threshold:.2f}**, còn thiếu **{shortage:.2f} điểm**)."
-        )
-        logger.info(
-            "[Tools/Eligibility] → CHƯA ĐỦ ĐIỀU KIỆN | thiếu=%.2f", shortage
-        )
-
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Private Logging Helpers
-# ---------------------------------------------------------------------------
-
-def _log_filters(filters: dict[str, Any]) -> None:
-    """
-    Log chi tiết từng field của filter đang được áp dụng.
-    Giúp debug nhanh khi search không trả về kết quả đúng.
-    """
-    if not filters:
-        logger.info("[Tools/Search] Filters: KHÔNG có filter — search toàn bộ collection.")
-        return
-
-    # Kiểm tra field lạ (không nằm trong _KNOWN_FILTER_KEYS)
-    unknown_keys = set(filters.keys()) - _KNOWN_FILTER_KEYS
-    if unknown_keys:
-        logger.warning(
-            "[Tools/Search] Filter keys không chuẩn sẽ bị bỏ qua bởi Qdrant: %s",
-            unknown_keys,
-        )
-
-    # Log từng filter field
-    active_count = 0
-    logger.info("[Tools/Search] Filters đang được áp dụng:")
-    for key in sorted(filters.keys()):
-        value = filters[key]
-        if value is None:
-            logger.info(
-                "[Tools/Search]   ├─ %-12s = None  → BỎ QUA (không filter field này)",
-                key,
-            )
+        logger.info("[Tool] Qdrant Strict search failed. Falling back to Relaxed search 1 (bỏ doc_type)...")
+        # Bước 2: Relaxed 1 (chỉ year)
+        relaxed_filters_1 = {}
+        if year: relaxed_filters_1["year"] = year
+        
+        if relaxed_filters_1 != strict_filters:
+            results = do_search(relaxed_filters_1)
+            
+        if results:
+            logger.info("[Tool] Search thành công ở Bước 2 (Relaxed 1).")
         else:
-            value_type = type(value).__name__
-            logger.info(
-                "[Tools/Search]   ├─ %-12s = %-20r  [type: %s]  → ÁP DỤNG",
-                key, value, value_type,
-            )
-            active_count += 1
+            logger.info("[Tool] Qdrant Relaxed search 1 failed. Falling back to Pure Semantic search...")
+            # Bước 3: Semantic thuần túy (không filter)
+            results = do_search({})
+            if results:
+                logger.info("[Tool] Search thành công ở Bước 3 (Pure Semantic).")
 
-    if active_count == 0:
-        logger.info(
-            "[Tools/Search]   └─ Tất cả giá trị là None → "
-            "Không áp dụng hard filter nào."
-        )
-    else:
-        logger.info(
-            "[Tools/Search]   └─ Tổng: %d/%d filter fields được kích hoạt.",
-            active_count, len(filters),
-        )
+    if not results:
+        return "Tôi không tìm thấy thông tin văn bản nào liên quan đến câu hỏi của bạn."
 
-
-def _format_filters_for_log(filters: dict[str, Any]) -> str:
-    """Tóm tắt filters thành chuỗi ngắn cho single-line log."""
-    if not filters:
-        return "none"
-    parts = [
-        f"{k}={v!r}" for k, v in sorted(filters.items()) if v is not None
-    ]
-    return "{" + ", ".join(parts) + "}" if parts else "none"
+    # Format output
+    lines = []
+    for r in results:
+        content = r.get("content", "").strip()
+        metadata = r.get("metadata", {})
+        source_file = metadata.get("source_file", "Cơ sở dữ liệu")
+        
+        lines.append(f"--- Nguồn: {source_file} ---\n{content}\n")
+        
+    return "Thông tin tìm thấy:\n\n" + "\n".join(lines)

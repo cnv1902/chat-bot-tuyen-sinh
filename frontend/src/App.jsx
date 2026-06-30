@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import ChatPage from "./pages/ChatPage";
 import AdminLayout from "./components/admin/AdminLayout";
-import UploadDocument from "./pages/admin/UploadDocument";
-import ManageDocuments from "./pages/admin/ManageDocuments";
+import DocumentUpload from "./pages/admin/DocumentUpload";
+import ChunkReview from "./pages/admin/ChunkReview";
 import ProvidersConfig from "./pages/admin/ProvidersConfig";
 import SlotsConfig from "./pages/admin/SlotsConfig";
 import SystemStatus from "./pages/admin/SystemStatus";
@@ -38,9 +38,9 @@ function App() {
         {/* Protected Admin Nested Routes */}
         <Route path="/admin" element={<ProtectedRoute />}>
           <Route element={<AdminLayout />}>
-            <Route index element={<Navigate to="/admin/upload" replace />} />
-            <Route path="upload" element={<UploadDocument />} />
-            <Route path="manage" element={<ManageDocuments />} />
+            <Route index element={<Navigate to="/admin/documents" replace />} />
+            <Route path="documents" element={<DocumentUpload />} />
+            <Route path="documents/:id/review" element={<ChunkReview />} />
             <Route path="providers" element={<ProvidersConfig />} />
             <Route path="slots" element={<SlotsConfig />} />
             <Route path="academic-structure" element={<AcademicStructure />} />

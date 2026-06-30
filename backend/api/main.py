@@ -88,7 +88,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 from api.routers import chat as chat_router
 from api.routers import health as health_router
-from api.routers import upload as upload_router
+from api.routers import document_router
 from api.routers import admin as admin_router
 from api.routers import auth as auth_router
 from api.routers import auth_google as auth_google_router
@@ -189,7 +189,11 @@ async def lifespan(app: FastAPI):
     try:
         from db.connection import init_db
         await init_db()
-        logger.info("[Startup] [0/3] PostgreSQL tables ✅ sẵn sàng.")
+        logger.info("[Startup] [0/4] PostgreSQL tables ✅ sẵn sàng.")
+
+        from core.cache_service import load_admission_cache
+        await load_admission_cache()
+        logger.info("[Startup] [0.5/4] Cache RAM ✅ sẵn sàng.")
 
         # Seed config Gemini mặc định nếu DB còn rỗng
         await _seed_default_llm_config()
@@ -349,7 +353,7 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 
 app.include_router(chat_router.router)     # POST /api/chat
 app.include_router(health_router.router)   # GET /health
-app.include_router(upload_router.router)   # POST /api/upload
+app.include_router(document_router.router)   # POST /api/documents/*
 app.include_router(admin_router.router)    # GET/POST /admin/*
 app.include_router(auth_router.router)     # POST /api/auth/login
 app.include_router(auth_google_router.router) # POST /api/auth/google

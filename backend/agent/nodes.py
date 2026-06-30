@@ -134,10 +134,14 @@ def classify_intent(state: AdmissionState) -> AdmissionState:
 
     # Lấy provider từ DB và gọi JSON completion
     async def _call():
+        import datetime
+        current_year = datetime.datetime.now().year
+        system_prompt = _CLASSIFY_SYSTEM + f"\n\nLưu ý thời gian thực: Năm nay là {current_year}. Nếu người dùng dùng các từ như 'năm nay', 'hiện tại', hãy tự động hiểu là {current_year}, 'năm ngoái' là {current_year - 1}."
+        
         provider = await get_chat_provider()
         return await provider.complete_json(
             messages=[{"role": "user", "content": user_msg}],
-            system=_CLASSIFY_SYSTEM,
+            system=system_prompt,
         )
 
     raw_response = _run_async(_call())
@@ -415,10 +419,13 @@ def generate_answer(state: AdmissionState) -> AdmissionState:
 
     try:
         async def _call():
+            import datetime
+            current_year = datetime.datetime.now().year
+            system_prompt = _ANSWER_SYSTEM + f"\n\nLưu ý: Thời điểm hiện tại là năm {current_year}. Nếu câu hỏi đề cập đến 'năm nay', hãy hiểu là {current_year}."
             provider = await get_chat_provider()
             return await provider.complete(
                 messages=messages,
-                system=_ANSWER_SYSTEM,
+                system=system_prompt,
                 max_tokens=2048,
                 temperature=0.0,
                 top_p=0.1,  # Nucleus sampling: chỉ chọn trong top-10% token xác suất cao

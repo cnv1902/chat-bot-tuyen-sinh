@@ -104,3 +104,33 @@ async def list_available_models(
     module = importlib.import_module(module_path)
     cls    = getattr(module, class_name)
     return await cls.list_models(api_key=api_key, endpoint=endpoint)
+
+async def get_langchain_chat_model():
+    """
+    Trả về instance BaseChatModel của LangChain dựa trên config DB.
+    Được dùng cho AgentExecutor.
+    """
+    async with AsyncSessionLocal() as db:
+        from db.crud import get_slot, get_provider
+        slot_cfg = await get_slot(db, "chat")
+        if not slot_cfg:
+            raise ValueError("Slot 'chat' chưa được cấu hình.")
+        provider_cfg = await get_provider(db, slot_cfg.provider)
+        if not provider_cfg:
+            raise ValueError("Provider chưa có cấu hình API.")
+            
+    provider_name = slot_cfg.provider
+    model_name    = slot_cfg.model_name
+    api_key       = provider_cfg.api_key or ""
+    
+    if provider_name == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0)
+    elif provider_name == "openai":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model=model_name, openai_api_key=api_key, temperature=0)
+    elif provider_name == "groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(model=model_name, groq_api_key=api_key, temperature=0)
+    else:
+        raise ValueError(f"LangChain integration cho provider '{provider_name}' chưa được implement.")

@@ -457,3 +457,39 @@ def delete_points_by_source_file(
             "[VectorDB] Lỗi xóa points theo source_file=%r: %s", source_file, str(e), exc_info=True
         )
         return 0
+
+def delete_points_by_document_id(
+    document_id: int,
+    collection_name: str | None = None,
+) -> int:
+    """Xóa points theo document_id"""
+    name = collection_name or get_collection_name()
+    try:
+        client = _get_client()
+        points_filter = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="document_id",
+                    match=qmodels.MatchValue(value=document_id),
+                )
+            ]
+        )
+        count_before = client.count(
+            collection_name=name,
+            count_filter=points_filter,
+            exact=True,
+        ).count
+
+        if count_before == 0:
+            return 0
+
+        client.delete(
+            collection_name=name,
+            points_selector=qmodels.FilterSelector(filter=points_filter),
+            wait=True,
+        )
+        logger.info("[VectorDB] Đã xóa %d points có document_id=%d", count_before, document_id)
+        return count_before
+    except Exception as e:
+        logger.error("[VectorDB] Lỗi xóa points theo document_id=%d: %s", document_id, str(e))
+        return 0
