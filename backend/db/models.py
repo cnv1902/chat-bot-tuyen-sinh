@@ -235,24 +235,39 @@ class AdmissionMethod(Base):
 
 class AdmissionPlan(Base):
     """
-    Đề án xét tuyển của một ngành trong một năm.
+    Đề án xét tuyển của một ngành trong một năm. (15 cột mới)
     """
     __tablename__ = "admission_plans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    major_code: Mapped[str] = mapped_column(
-        ForeignKey("majors.major_code", ondelete="CASCADE"), nullable=False, index=True
-    )
-    methods: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
-    
-    # Danh sách các mã tổ hợp môn, ví dụ: ["A00", "A01"]
-    combinations: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
-    
-    # Chỉ tiêu (nếu có)
-    target_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    major: Mapped["Major"] = relationship("Major")
+    ma_xet_tuyen: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    ma_nganh: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    nam: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    ma_phuong_thuc: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    khoi: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    diem_chuan: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    hoc_ba_tbc_3_nam: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    diem_tot_nghiep: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    tbc_3_nam_ngoai_ngu: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    hoc_luc_12: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nang_khieu: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    mon_nhan_he_so: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tieng_anh: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ngoai_ngu: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    he_so: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     def __repr__(self) -> str:
-        return f"<AdmissionPlan year={self.year} major={self.major_code!r}>"
+        return f"<AdmissionPlan ma_xet_tuyen={self.ma_xet_tuyen} nam={self.nam}>"
+
+class AdmissionCode(Base):
+    """
+    Mã xét tuyển.
+    """
+    __tablename__ = "admission_codes"
+
+    admission_code: Mapped[str] = mapped_column(String(50), primary_key=True, index=True)
+    major_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    program_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<AdmissionCode {self.admission_code} - {self.program_name}>"

@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from db.connection import get_db
-from db.models import Major, SubjectCombination, AdmissionMethod, AdmissionPlan
+from db.models import Major, SubjectCombination, AdmissionMethod, AdmissionPlan, AdmissionCode
 
 router = APIRouter(prefix="/api/admission", tags=["admission"])
 
@@ -120,151 +120,163 @@ async def import_methods(file: UploadFile = File(...), db: AsyncSession = Depend
 @router.post("/import-plans")
 async def import_plans(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     logger.info(f"[Admission] Bắt đầu xử lý import Đề án từ file: {file.filename}")
-    if not file.filename.endswith('.xlsx'):
-        logger.warning(f"[Admission] Import thất bại: Định dạng tệp không hợp lệ ({file.filename})")
-        raise HTTPException(status_code=400, detail="Chỉ chấp nhận tệp định dạng .xlsx")
+    if not (file.filename.endswith('.xlsx') or file.filename.endswith('.xls') or file.filename.endswith('.csv')):
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận file định dạng Excel hoặc CSV")
     
     try:
         contents = await file.read()
-        df = pd.read_excel(io.BytesIO(contents))
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
     except Exception as e:
-        logger.error(f"[Admission] Lỗi khi đọc tệp Excel Đề án: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Lỗi khi đọc tệp Excel: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Lỗi khi đọc tệp: {str(e)}")
     
-    required_cols = ["Năm", "Mã Ngành", "Mã Phương Thức", "Mã Tổ Hợp", "Chỉ Tiêu"]
-    if not all(col in df.columns for col in required_cols):
-        logger.warning(f"[Admission] Định dạng tệp không hợp lệ: {file.filename}")
-        raise HTTPException(status_code=400, detail=f"Tệp không đúng định dạng. Yêu cầu các cột: {', '.join(required_cols)}")
+    # Chuẩn hóa tên cột để mapping cho dễ (chuyển về lowercase, strip khoảng trắng)
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    
+    # Định nghĩa map từ cột tiếng Việt sang trường DB
+    col_map = {
+        "mã xét tuyển": "ma_xet_tuyen",
+        "mã ngành": "ma_nganh",
+        "năm": "nam",
+        "mã phương thức": "ma_phuong_thuc",
+        "khối": "khoi",
+        "điểm chuẩn": "diem_chuan",
+        "học bạ trung bình chung 3 năm": "hoc_ba_tbc_3_nam",
+        "điểm tốt nghiệp": "diem_tot_nghiep",
+        "trung bình chung 3 năm ngoại ngữ": "tbc_3_nam_ngoai_ngu",
+        "học lực 12": "hoc_luc_12",
+        "năng khiếu": "nang_khieu",
+        "môn nhân hệ số": "mon_nhan_he_so",
+        "tiếng anh": "tieng_anh",
+        "ngoại ngữ": "ngoai_ngu",
+        "hệ số": "he_so"
+    }
+    
+    # Tạo dictionary index cột để truy xuất
+    actual_cols = {}
+    for raw_col in df.columns:
+        for vn_name, db_name in col_map.items():
+            if vn_name == raw_col:
+                actual_cols[db_name] = raw_col
+                break
+                
+    if "ma_xet_tuyen" not in actual_cols:
+        raise HTTPException(status_code=400, detail="Tệp không có cột 'Mã xét tuyển'.")
 
-    has_quota = "Chỉ Tiêu" in df.columns
+    # Thay thế NaN bằng None
+    df = df.where(pd.notnull(df), None)
 
-    inserted = 0
-    updated = 0
+    records = []
     for _, row in df.iterrows():
-        year_raw = row.get("Năm", None)
-        major_code = str(row.get("Mã Ngành", "")).strip()
-        methods_raw = str(row.get("Mã Phương Thức", "")).strip()
-        combos_raw = str(row.get("Mã Tổ Hợp", "")).strip()
-        
-        if pd.isna(year_raw) or not major_code or major_code == 'nan' or not methods_raw or methods_raw == 'nan':
+        # Lấy ma_xet_tuyen
+        ma_xt = str(row.get(actual_cols.get("ma_xet_tuyen", "")))
+        if ma_xt == 'None' or ma_xt.strip() == '':
             continue
             
-        try:
-            year = int(float(year_raw))
-        except ValueError:
-            continue
+        def get_val(db_name):
+            if db_name not in actual_cols:
+                return None
+            val = row.get(actual_cols[db_name])
+            if val is None or str(val).strip() == 'None' or str(val).strip() == 'nan':
+                return None
+            return str(val).strip()
             
-        if combos_raw and combos_raw.lower() != 'nan':
-            combo_list = [c.strip() for c in combos_raw.split(',') if c.strip()]
-        else:
-            combo_list = []
-            
-        method_list = [m.strip() for m in methods_raw.split(',') if m.strip()]
-            
-        target_quota = None
-        if has_quota:
-            q_val = row.get("Chỉ Tiêu", None)
-            if not pd.isna(q_val):
-                try:
-                    target_quota = int(q_val)
-                except ValueError:
-                    pass
+        def get_int(db_name):
+            val = get_val(db_name)
+            if not val:
+                return None
+            try:
+                # Có thể file excel parse năm thành 2024.0 -> float -> int
+                return int(float(val))
+            except:
+                return None
 
-        # Upsert logic based on year and major_code ONLY
-        stmt = select(AdmissionPlan).where(
-            AdmissionPlan.year == year,
-            AdmissionPlan.major_code == major_code
+        record = AdmissionPlan(
+            ma_xet_tuyen=get_val("ma_xet_tuyen"),
+            ma_nganh=get_val("ma_nganh"),
+            nam=get_int("nam"),
+            ma_phuong_thuc=get_val("ma_phuong_thuc"),
+            khoi=get_val("khoi"),
+            diem_chuan=get_val("diem_chuan"),
+            hoc_ba_tbc_3_nam=get_val("hoc_ba_tbc_3_nam"),
+            diem_tot_nghiep=get_val("diem_tot_nghiep"),
+            tbc_3_nam_ngoai_ngu=get_val("tbc_3_nam_ngoai_ngu"),
+            hoc_luc_12=get_val("hoc_luc_12"),
+            nang_khieu=get_val("nang_khieu"),
+            mon_nhan_he_so=get_val("mon_nhan_he_so"),
+            tieng_anh=get_val("tieng_anh"),
+            ngoai_ngu=get_val("ngoai_ngu"),
+            he_so=get_val("he_so")
         )
-        result = await db.execute(stmt)
-        plan = result.scalar_one_or_none()
+        records.append(record)
         
-        if plan:
-            plan.methods = method_list
-            plan.combinations = combo_list
-            if target_quota is not None:
-                plan.target_quota = target_quota
-            updated += 1
-        else:
-            new_plan = AdmissionPlan(
-                year=year,
-                major_code=major_code,
-                methods=method_list,
-                combinations=combo_list,
-                target_quota=target_quota
-            )
-            db.add(new_plan)
-            inserted += 1
+    if not records:
+        raise HTTPException(status_code=400, detail="Không tìm thấy dòng dữ liệu nào hợp lệ.")
         
+    db.add_all(records)
     try:
         await db.commit()
     except Exception as e:
         await db.rollback()
-        logger.error(f"[Admission] Lỗi lưu dữ liệu Đề án: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Lỗi lưu dữ liệu: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Lỗi lưu Database: {str(e)}")
         
-    logger.info(f"[Admission] Đã import thành công {inserted + updated} Đề án xét tuyển (Mới: {inserted}, Cập nhật: {updated}).")
-    return {"message": f"Đã nạp thành công {inserted + updated} Đề án xét tuyển."}
+    return {"message": f"Đã nhập thành công {len(records)} đề án tuyển sinh."}
 
 @router.get("/plans")
 async def get_admission_plans(
-    year: int = Query(None, description="Năm tuyển sinh"),
-    major_code: Optional[str] = Query(None, description="Lọc theo Mã Ngành"),
+    page: int = Query(1, ge=1),
+    size: int = Query(5000, ge=1),
     db: AsyncSession = Depends(get_db)
 ):
-    if not year:
-        stmt_max = select(AdmissionPlan.year).order_by(AdmissionPlan.year.desc()).limit(1)
-        res_year = await db.execute(stmt_max)
-        year = res_year.scalar() or 2026
-        
     stmt = (
-        select(AdmissionPlan, Major)
-        .join(Major, AdmissionPlan.major_code == Major.major_code)
-        .where(AdmissionPlan.year == year)
+        select(AdmissionPlan, AdmissionCode.program_name, Major.major_name)
+        .outerjoin(AdmissionCode, AdmissionPlan.ma_xet_tuyen == AdmissionCode.admission_code)
+        .outerjoin(Major, AdmissionPlan.ma_nganh == Major.major_code)
+        .order_by(AdmissionPlan.id.desc())
+        .offset((page - 1) * size)
+        .limit(size)
     )
-    
-    if major_code:
-        stmt = stmt.where(Major.major_code.ilike(f"%{major_code}%"))
-        
     result = await db.execute(stmt)
     rows = result.all()
     
-    # Lấy thông tin Phương thức để map tên
-    stmt_methods = select(AdmissionMethod).where(AdmissionMethod.year == year)
-    res_methods = await db.execute(stmt_methods)
-    methods_dict = {m.method_code: m.method_name for m in res_methods.scalars().all()}
-    
-    # Lấy thông tin Tổ hợp để map tên môn
-    stmt_combos = select(SubjectCombination)
-    res_combos = await db.execute(stmt_combos)
-    combos_dict = {c.combo_code: c.subjects for c in res_combos.scalars().all()}
-    
-    response = []
-    for plan, major in rows:
-        plan_methods = []
-        for mc in plan.methods:
-            plan_methods.append({
-                "code": mc,
-                "name": methods_dict.get(mc, "Không xác định")
-            })
-            
-        plan_combos = []
-        for cc in plan.combinations:
-            plan_combos.append({
-                "code": cc,
-                "subjects": combos_dict.get(cc, "Không xác định")
-            })
-            
-        response.append({
+    data = []
+    for plan, program_name, major_name in rows:
+        data.append({
             "id": plan.id,
-            "year": plan.year,
-            "major_code": plan.major_code,
-            "major_name": major.major_name,
-            "methods": plan_methods,
-            "combinations": plan_combos,
-            "target_quota": plan.target_quota
+            "maXetTuyen": plan.ma_xet_tuyen,
+            "maNganh": plan.ma_nganh,
+            "nam": plan.nam,
+            "maPhuongThuc": plan.ma_phuong_thuc,
+            "khoi": plan.khoi,
+            "diemChuan": plan.diem_chuan,
+            "hocBaTrungBinhChung3Nam": plan.hoc_ba_tbc_3_nam,
+            "diemTotNghiep": plan.diem_tot_nghiep,
+            "trungBinhChung3NamNgoaiNgu": plan.tbc_3_nam_ngoai_ngu,
+            "hocLuc12": plan.hoc_luc_12,
+            "nangKhieu": plan.nang_khieu,
+            "monNhanHeSo": plan.mon_nhan_he_so,
+            "tiengAnh": plan.tieng_anh,
+            "ngoaiNgu": plan.ngoai_ngu,
+            "heSo": plan.he_so,
+            "programName": program_name,
+            "majorName": major_name
         })
         
-    return response
+    # Get total count (optional, but good for pagination if needed)
+    from sqlalchemy import func
+    count_stmt = select(func.count(AdmissionPlan.id))
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar_one()
+
+    return {
+        "data": data,
+        "total": total,
+        "page": page,
+        "size": size
+    }
+
 
 @router.get("/methods")
 async def get_admission_methods(

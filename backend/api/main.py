@@ -97,6 +97,7 @@ from api.routers import admission as admission_router
 from api.routers import admission_crud as admission_crud_router
 from api.routers import staff as staff_router
 from api.routers import candidate_router
+from api.routers import admission_code_router
 from api.schemas import ErrorResponse
 from core.embedder import warmup as embedder_warmup
 from core.vectordb import setup_collection
@@ -355,6 +356,7 @@ app.include_router(auth_google_router.router) # POST /api/auth/google
 app.include_router(academic_router.router) # POST/GET /api/academic/*
 app.include_router(admission_router.router) # POST/GET /api/admission/*
 app.include_router(admission_crud_router.router) # CRUD /api/admission_crud/*
+app.include_router(admission_code_router.router) # GET/POST /api/admissions
 app.include_router(staff_router.router)    # CRUD /api/staff/*
 app.include_router(candidate_router.router) # CRUD /api/candidate/*
 

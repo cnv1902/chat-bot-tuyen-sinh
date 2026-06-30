@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FileText, FolderOpen, Key, Cpu, Activity, ArrowLeft, Users, UserCheck } from 'lucide-react';
+import { FileText, FolderOpen, Key, Cpu, Activity, ArrowLeft, Users, UserCheck, Hash } from 'lucide-react';
 
 export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
   const navigate = useNavigate();
@@ -43,6 +43,14 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
         >
           <FileText size={18} />
           Đề án Tuyển sinh
+        </NavLink>
+        <NavLink
+          to="/admin/admission-codes"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <Hash size={18} />
+          Quản lý Mã Xét Tuyển
         </NavLink>
         <NavLink
           to="/admin/staff"

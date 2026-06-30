@@ -2,6 +2,8 @@ import io
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from pydantic import BaseModel
+from typing import List, Optional
 import pandas as pd
 
 from db.connection import get_db
@@ -70,7 +72,15 @@ async def import_majors(file: UploadFile = File(...), db: AsyncSession = Depends
         if not m_code or m_code == 'nan' or not i_code or i_code == 'nan':
             continue
             
-        # Kiem tra tồn tại
+        # Kiểm tra xem Institute đã tồn tại chưa, nếu chưa thì tự động tạo mới để tránh lỗi Foreign Key
+        stmt_inst = select(Institute).where(Institute.institute_code == i_code)
+        inst_exists = (await db.execute(stmt_inst)).scalar_one_or_none()
+        if not inst_exists:
+            new_inst = Institute(institute_code=i_code, institute_name=i_code)
+            db.add(new_inst)
+            await db.flush() # Commit nhẹ để có institute_code hợp lệ cho Major
+
+        # Kiem tra tồn tại Major
         stmt = select(Major).where(Major.major_code == m_code)
         result = await db.execute(stmt)
         major = result.scalar_one_or_none()
@@ -78,9 +88,6 @@ async def import_majors(file: UploadFile = File(...), db: AsyncSession = Depends
         if major:
             major.institute_code = i_code
             major.major_name = m_name
-            # Có thể gán None cho các cột dư thừa nếu muốn xóa sạch dữ liệu cũ
-            major.training_program = None
-            major.subject_combinations = []
         else:
             major = Major(
                 major_code=m_code,
@@ -130,3 +137,99 @@ async def get_academic_tree(db: AsyncSession = Depends(get_db)):
         })
         
     return tree
+
+class InstituteUpdate(BaseModel):
+    institute_name: str
+
+class MajorUpdate(BaseModel):
+    major_name: str
+    institute_code: str
+
+class BulkDeleteRequest(BaseModel):
+    institute_codes: List[str] = []
+    major_codes: List[str] = []
+
+@router.put("/institutes/{code}")
+async def update_institute(code: str, data: InstituteUpdate, db: AsyncSession = Depends(get_db)):
+    stmt = select(Institute).where(Institute.institute_code == code)
+    result = await db.execute(stmt)
+    institute = result.scalar_one_or_none()
+    
+    if not institute:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Trường/Viện")
+        
+    institute.institute_name = data.institute_name
+    await db.commit()
+    return {"message": "Cập nhật thành công"}
+
+@router.delete("/institutes/{code}")
+async def delete_institute(code: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(Institute).where(Institute.institute_code == code)
+    result = await db.execute(stmt)
+    institute = result.scalar_one_or_none()
+    
+    if not institute:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Trường/Viện")
+        
+    await db.delete(institute)
+    await db.commit()
+    return {"message": "Xóa thành công"}
+
+@router.put("/majors/{code}")
+async def update_major(code: str, data: MajorUpdate, db: AsyncSession = Depends(get_db)):
+    stmt = select(Major).where(Major.major_code == code)
+    result = await db.execute(stmt)
+    major = result.scalar_one_or_none()
+    
+    if not major:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Ngành")
+        
+    major.major_name = data.major_name
+    major.institute_code = data.institute_code
+    
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Mã Trường/Viện không hợp lệ")
+        
+    return {"message": "Cập nhật thành công"}
+
+@router.delete("/majors/{code}")
+async def delete_major(code: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(Major).where(Major.major_code == code)
+    result = await db.execute(stmt)
+    major = result.scalar_one_or_none()
+    
+    if not major:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Ngành")
+        
+    await db.delete(major)
+    await db.commit()
+    return {"message": "Xóa thành công"}
+
+@router.post("/bulk-delete")
+async def bulk_delete_academic(data: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
+    deleted_inst = 0
+    deleted_major = 0
+    
+    # Xóa ngành trước
+    if data.major_codes:
+        stmt = select(Major).where(Major.major_code.in_(data.major_codes))
+        result = await db.execute(stmt)
+        majors = result.scalars().all()
+        for m in majors:
+            await db.delete(m)
+            deleted_major += 1
+            
+    # Xóa trường
+    if data.institute_codes:
+        stmt = select(Institute).where(Institute.institute_code.in_(data.institute_codes))
+        result = await db.execute(stmt)
+        institutes = result.scalars().all()
+        for i in institutes:
+            await db.delete(i)
+            deleted_inst += 1
+            
+    await db.commit()
+    return {"message": f"Đã xóa {deleted_inst} Trường/Viện và {deleted_major} Ngành"}

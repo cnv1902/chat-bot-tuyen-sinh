@@ -12,6 +12,7 @@ import AcademicStructure from "./pages/admin/AcademicStructure";
 import AdmissionManagement from "./pages/admin/AdmissionManagement";
 import StaffManagement from "./pages/admin/StaffManagement";
 import CandidateManagement from "./pages/admin/CandidateManagement";
+import AdmissionCodeManagement from "./pages/admin/AdmissionCodeManagement";
 
 // Component để bảo vệ các route cần đăng nhập
 const ProtectedRoute = () => {
@@ -27,10 +28,10 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<ChatPage />} />
-        
+
         {/* Public Admin Routes */}
         <Route path="/admin/login" element={<AdminLogin />} />
-        
+
         {/* Public OAuth Routes */}
         <Route path="/auth/google/callback" element={<GoogleCallback />} />
 
@@ -44,6 +45,7 @@ function App() {
             <Route path="slots" element={<SlotsConfig />} />
             <Route path="academic-structure" element={<AcademicStructure />} />
             <Route path="admission-plans" element={<AdmissionManagement />} />
+            <Route path="admission-codes" element={<AdmissionCodeManagement />} />
             <Route path="staff" element={<StaffManagement />} />
             <Route path="candidates" element={<CandidateManagement />} />
             <Route path="status" element={<SystemStatus />} />
