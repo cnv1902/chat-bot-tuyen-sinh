@@ -46,7 +46,13 @@ async def approve_and_embed_chunks(doc_id: int, approved_chunks: List[Dict]):
                 # Create Qdrant point
                 point = qmodels.PointStruct(
                     id=str(uuid.uuid4()),
-                    vector=vector,
+                    vector={
+                        "dense": vector["dense"],
+                        "sparse": qmodels.SparseVector(
+                            indices=vector["sparse_indices"],
+                            values=vector["sparse_values"]
+                        )
+                    },
                     payload=payload
                 )
                 points.append(point)

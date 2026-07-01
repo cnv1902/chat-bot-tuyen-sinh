@@ -13,6 +13,7 @@ import AdmissionManagement from "./pages/admin/AdmissionManagement";
 import StaffManagement from "./pages/admin/StaffManagement";
 import CandidateManagement from "./pages/admin/CandidateManagement";
 import AdmissionCodeManagement from "./pages/admin/AdmissionCodeManagement";
+import QAApproval from "./pages/admin/QAApproval";
 
 // Component để bảo vệ các route cần đăng nhập
 const ProtectedRoute = () => {
@@ -48,6 +49,7 @@ function App() {
             <Route path="admission-codes" element={<AdmissionCodeManagement />} />
             <Route path="staff" element={<StaffManagement />} />
             <Route path="candidates" element={<CandidateManagement />} />
+            <Route path="qa-approval" element={<QAApproval />} />
             <Route path="status" element={<SystemStatus />} />
           </Route>
         </Route>

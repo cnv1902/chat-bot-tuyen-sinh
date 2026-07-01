@@ -98,6 +98,7 @@ from api.routers import admission_crud as admission_crud_router
 from api.routers import staff as staff_router
 from api.routers import candidate_router
 from api.routers import admission_code_router
+from api.routers import admin_qa as admin_qa_router
 from api.schemas import ErrorResponse
 from core.embedder import warmup as embedder_warmup
 from core.vectordb import setup_collection
@@ -226,6 +227,10 @@ async def lifespan(app: FastAPI):
                 "[Startup] [2/3] Không thể tạo/xác nhận Qdrant collection. "
                 "Search sẽ thất bại cho đến khi vấn đề được khắc phục."
             )
+            
+        # Đảm bảo qa_semantic_cache tồn tại
+        setup_collection("qa_semantic_cache")
+        logger.info("[Startup] [2/3] Qdrant collection 'qa_semantic_cache' ✅ sẵn sàng.")
     except Exception as e:
         logger.error("[Startup] [2/3] Lỗi Qdrant: %s", str(e))
 
@@ -363,8 +368,9 @@ app.include_router(admission_crud_router.router) # CRUD /api/admission_crud/*
 app.include_router(admission_code_router.router) # GET/POST /api/admissions
 app.include_router(staff_router.router)    # CRUD /api/staff/*
 app.include_router(candidate_router.router) # CRUD /api/candidate/*
+app.include_router(admin_qa_router.router) # GET/POST/PUT/DELETE /api/admin/qa-staging
 
-logger.info("[Router] Đã đăng ký: POST /api/chat | GET /health | /admin/* | /api/auth/* | /api/academic/* | /api/admission/*")
+logger.info("[Router] Đã đăng ký: POST /api/chat | GET /health | /admin/* | /api/auth/* | /api/academic/* | /api/admission/* | /api/admin/qa-staging")
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Users, Upload, Search, Shield, Building, Library, Plus, X, Trash2, Edit } from 'lucide-react';
+import { Users, Upload, Search, Shield, Building, Library, Plus, X, Trash2, Edit, Loader2 } from 'lucide-react';
+import DeleteConfirmModal from '../../components/admin/DeleteConfirmModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -9,6 +10,7 @@ export default function StaffManagement() {
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: '', id: null, isDeleting: false });
   const [filterText, setFilterText] = useState('');
   
   // Modal state
@@ -148,7 +150,7 @@ export default function StaffManagement() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa cán bộ này?')) return;
+    setDeleteModal(prev => ({ ...prev, isDeleting: true }));
     try {
       const res = await fetch(`${API_BASE}/api/staff/delete/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -159,13 +161,13 @@ export default function StaffManagement() {
       }
     } catch (err) {
       showToast('Lỗi mạng', 'error');
+    } finally {
+      setDeleteModal({ isOpen: false, type: '', id: null, isDeleting: false });
     }
   };
 
   const handleBulkDelete = async () => {
-    if (selectedRows.length === 0) return;
-    if (!window.confirm(`Xóa ${selectedRows.length} cán bộ đã chọn?`)) return;
-
+    setDeleteModal(prev => ({ ...prev, isDeleting: true }));
     try {
       const res = await fetch(`${API_BASE}/api/staff/bulk-delete`, {
         method: 'POST',
@@ -181,7 +183,14 @@ export default function StaffManagement() {
       }
     } catch (err) {
       showToast('Lỗi mạng', 'error');
+    } finally {
+      setDeleteModal({ isOpen: false, type: '', id: null, isDeleting: false });
     }
+  };
+
+  const confirmDelete = () => {
+    if (deleteModal.type === 'single') handleDelete(deleteModal.id);
+    else if (deleteModal.type === 'bulk') handleBulkDelete();
   };
 
   const openAddModal = () => {
@@ -239,9 +248,7 @@ export default function StaffManagement() {
       <div className="admin-card" style={{ padding: '24px', backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px' }}>
           <div>
-            <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              Quản lý Cán bộ
-            </h3>
+            <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Cán bộ</h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
               Quản lý tài khoản và phân quyền cán bộ tư vấn tuyển sinh (Cấp Trường / Cấp Ngành).
             </p>
@@ -269,7 +276,7 @@ export default function StaffManagement() {
             <div style={{ display: 'flex', gap: '8px' }}>
               {selectedRows.length > 0 && (
                 <button
-                  onClick={handleBulkDelete}
+                  onClick={() => setDeleteModal({ isOpen: true, type: 'bulk', id: null, isDeleting: false })}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '8px',
                     backgroundColor: '#ef4444', color: '#fff', padding: '10px 16px',
@@ -322,7 +329,7 @@ export default function StaffManagement() {
                   cursor: uploading ? 'not-allowed' : 'pointer'
                 }}
               >
-                <Upload size={18} />
+                {uploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
                 {uploading ? 'Đang import...' : 'Import Excel'}
               </button>
             </div>
@@ -408,7 +415,11 @@ export default function StaffManagement() {
                         <button onClick={() => openEditModal(staff)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-blue)', marginRight: '10px' }} title="Sửa">
                           <Edit size={18} />
                         </button>
-                        <button onClick={() => handleDelete(staff.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }} title="Xóa">
+                        <button 
+                          onClick={() => setDeleteModal({ isOpen: true, type: 'single', id: staff.id, isDeleting: false })} 
+                          style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }} 
+                          title="Xóa"
+                        >
                           <Trash2 size={18} />
                         </button>
                       </td>
@@ -532,6 +543,15 @@ export default function StaffManagement() {
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, type: '', id: null, isDeleting: false })}
+        onConfirm={confirmDelete}
+        title="Xác nhận xóa cán bộ"
+        description={deleteModal.type === 'bulk' ? `Bạn có chắc chắn muốn xóa ${selectedRows.length} cán bộ đã chọn? Hành động này không thể hoàn tác.` : "Bạn có chắc chắn muốn xóa cán bộ này? Hành động này không thể hoàn tác."}
+        isDeleting={deleteModal.isDeleting}
+      />
     </div>
   );
 }

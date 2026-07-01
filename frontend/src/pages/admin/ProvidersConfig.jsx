@@ -77,11 +77,13 @@ export default function ProvidersConfig() {
 
   return (
     <div className="admin-card">
-      <div style={{ borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
-        <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase' }}>Cấu hình API Keys</h3>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-          Cung cấp API keys để kích hoạt các model AI. Khóa bảo mật được mã hóa lưu trữ.
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
+        <div>
+          <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Cấu hình API Keys</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
+            Cung cấp API keys để kích hoạt các model AI. Khóa bảo mật được mã hóa lưu trữ.
+          </p>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>

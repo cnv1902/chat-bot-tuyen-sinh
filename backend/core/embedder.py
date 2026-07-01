@@ -20,7 +20,8 @@ import threading
 from typing import Optional
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from FlagEmbedding import BGEM3FlagModel
+from huggingface_hub import login
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Singleton State (Module-level — tồn tại suốt vòng đời process)
 # ---------------------------------------------------------------------------
 
-_model_instance: Optional[SentenceTransformer] = None
+_model_instance: Optional[BGEM3FlagModel] = None
 _model_lock = threading.Lock()          # Đảm bảo thread-safe khi init lần đầu
 _model_name: Optional[str] = None      # Cache tên model để detect config thay đổi
 
@@ -38,7 +39,7 @@ _model_name: Optional[str] = None      # Cache tên model để detect config th
 # Singleton Loader
 # ---------------------------------------------------------------------------
 
-def _get_model() -> SentenceTransformer:
+def _get_model() -> BGEM3FlagModel:
     """
     Trả về instance SentenceTransformer duy nhất.
     Load model từ disk/HuggingFace cache nếu chưa khởi tạo.
@@ -73,18 +74,24 @@ def _get_model() -> SentenceTransformer:
         )
 
         try:
+            hf_token = os.getenv("HF_TOKEN")
+            if hf_token:
+                logger.info("[Embedder] Tìm thấy HF_TOKEN, tiến hành xác thực HuggingFace để tăng tốc độ tải...")
+                login(token=hf_token, add_to_git_credential=False)
+            
             # device="cpu" tường minh — tránh lỗi trên server không có CUDA
             # Có thể đổi thành "cuda" nếu server có GPU
             device = os.getenv("EMBED_DEVICE", "cpu").strip()
 
-            _model_instance = SentenceTransformer(
-                model_name_or_path=target_model,
+            _model_instance = BGEM3FlagModel(
+                target_model,
+                use_fp16=True if device != "cpu" else False, # fp16 chỉ cho GPU
                 device=device,
             )
             _model_name = target_model
 
-            # Log thông tin model để dễ debug
-            embed_dim = _model_instance.get_sentence_embedding_dimension()
+            # BGEM3FlagModel có config ẩn bên trong model.model
+            embed_dim = 1024 # BGE-M3 default dimension
             logger.info(
                 "[Embedder] Model '%s' đã sẵn sàng | Device: %s | Dim: %d",
                 target_model,
@@ -111,37 +118,38 @@ def _get_model() -> SentenceTransformer:
 # Public API
 # ---------------------------------------------------------------------------
 
-def embed(text: str) -> list[float]:
+def embed(text: str) -> dict:
     """
-    Encode một đoạn văn bản đơn lẻ thành vector embedding.
-
-    Dùng cho: Encoding câu hỏi của người dùng trong luồng Real-time Inference.
-    Ưu tiên tốc độ (single query, không cần batch).
-
-    Args:
-        text: Chuỗi văn bản cần encode. Sẽ bị truncate tự động
-              nếu vượt quá max_length của model (8192 tokens với bge-m3).
+    Encode một đoạn văn bản đơn lẻ thành hybrid vector embedding (dense + sparse).
 
     Returns:
-        Danh sách float biểu diễn vector embedding chiều 1024.
-        Đã được normalize L2 để tương thích với Cosine Similarity.
-
-    Raises:
-        RuntimeError: Nếu model chưa được load thành công.
-        ValueError: Nếu text là chuỗi rỗng.
+        Dict chứa `dense`, `sparse_indices`, `sparse_values`.
     """
     if not text or not text.strip():
         raise ValueError("[Embedder] Không thể encode chuỗi văn bản rỗng.")
 
     try:
         model = _get_model()
-        vector: np.ndarray = model.encode(
-            text.strip(),
-            normalize_embeddings=True,   # Bắt buộc để dùng Cosine Similarity
-            show_progress_bar=False,
-            convert_to_numpy=True,
+        out = model.encode(
+            [text.strip()],
+            max_length=512,
+            return_dense=True,
+            return_sparse=True,
+            return_colbert_vecs=False,
         )
-        return vector.tolist()
+        
+        dense_vec = out['dense_vecs'][0].tolist()
+        lexical_weights = out['lexical_weights'][0]
+        
+        # Lấy keys và values dưới dạng chuỗi int và float cho sparse vector
+        sparse_indices = [int(k) for k in lexical_weights.keys()]
+        sparse_values = [float(v) for v in lexical_weights.values()]
+        
+        return {
+            "dense": dense_vec,
+            "sparse_indices": sparse_indices,
+            "sparse_values": sparse_values
+        }
 
     except ValueError:
         raise
@@ -150,12 +158,12 @@ def embed(text: str) -> list[float]:
         raise RuntimeError(f"Lỗi embedding: {e}") from e
 
 
-def embed_batch(texts: list[str], batch_size: int = 0) -> list[list[float]]:
+def embed_batch(texts: list[str], batch_size: int = 0) -> list[dict]:
     """
-    Encode một danh sách văn bản thành batch vector embeddings.
+    Encode một danh sách văn bản thành batch hybrid vector embeddings.
 
     Dùng cho: Indexing Pipeline (xử lý hàng trăm chunks cùng lúc).
-    Tối ưu throughput thông qua batched encoding của SentenceTransformer.
+    Tối ưu throughput thông qua batched encoding.
 
     Args:
         texts:      Danh sách văn bản cần encode. Bỏ qua chuỗi rỗng tự động.
@@ -163,7 +171,7 @@ def embed_batch(texts: list[str], batch_size: int = 0) -> list[list[float]]:
                     môi trường EMBED_BATCH_SIZE (mặc định 32).
 
     Returns:
-        Danh sách các vector embedding tương ứng (đã normalize L2).
+        Danh sách các dictionary chứa `dense`, `sparse_indices`, `sparse_values`.
         Số lượng phần tử = số lượng texts hợp lệ (sau khi lọc rỗng).
 
     Raises:
@@ -188,16 +196,30 @@ def embed_batch(texts: list[str], batch_size: int = 0) -> list[list[float]]:
             batch_size,
         )
 
-        vectors: np.ndarray = model.encode(
+        out = model.encode(
             valid_texts,
             batch_size=batch_size,
-            normalize_embeddings=True,
-            show_progress_bar=len(valid_texts) > 50,  # Chỉ show progress bar khi nhiều
-            convert_to_numpy=True,
+            max_length=512, # Giới hạn độ dài để tăng tốc độ CPU Inference
+            return_dense=True,
+            return_sparse=True,
+            return_colbert_vecs=False,
         )
 
-        logger.info("[Embedder] Batch encode hoàn thành: %d vectors.", len(vectors))
-        return vectors.tolist()
+        dense_vecs = out['dense_vecs']
+        lexical_weights_list = out['lexical_weights']
+        
+        results = []
+        for i in range(len(valid_texts)):
+            sparse_indices = [int(k) for k in lexical_weights_list[i].keys()]
+            sparse_values = [float(v) for v in lexical_weights_list[i].values()]
+            results.append({
+                "dense": dense_vecs[i].tolist(),
+                "sparse_indices": sparse_indices,
+                "sparse_values": sparse_values
+            })
+
+        logger.info("[Embedder] Batch encode hoàn thành: %d hybrid vectors.", len(results))
+        return results
 
     except ValueError:
         raise
@@ -216,9 +238,7 @@ def get_embedding_dimension() -> int:
     Returns:
         Số chiều embedding (1024 với BAAI/bge-m3).
     """
-    model = _get_model()
-    dim = model.get_sentence_embedding_dimension()
-    return dim if dim is not None else int(os.getenv("EMBED_DIMENSION", "1024"))
+    return 1024
 
 
 def warmup() -> None:
@@ -237,8 +257,9 @@ def warmup() -> None:
         # Encode một câu thử để chắc chắn model hoạt động đúng
         test_vector = embed("Trường Đại học Vinh tuyển sinh năm 2026")
         logger.info(
-            "[Embedder] Warmup thành công | Vector dim: %d",
-            len(test_vector),
+            "[Embedder] Warmup thành công | Vector dim: %d | Sparse Tokens: %d",
+            len(test_vector["dense"]),
+            len(test_vector["sparse_indices"])
         )
     except Exception as e:
         logger.error("[Embedder] Warmup thất bại: %s", str(e), exc_info=True)

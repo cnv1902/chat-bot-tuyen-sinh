@@ -78,9 +78,7 @@ export default function CandidateManagement() {
       <div className="admin-card" style={{ padding: '24px', backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px' }}>
           <div>
-            <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              Quản lý Thí sinh
-            </h3>
+            <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Quản lý Thí sinh</h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
               Tra cứu và xuất danh sách dữ liệu thí sinh đăng ký tư vấn tuyển sinh.
             </p>

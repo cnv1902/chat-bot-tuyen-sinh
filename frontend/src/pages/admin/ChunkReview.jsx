@@ -182,8 +182,14 @@ const ChunkReview = () => {
                 Quay lại Danh sách
             </Button>
             
-            <Title level={3}>Duyệt nội dung tài liệu (Human-in-the-loop)</Title>
-            <Text type="secondary">Admin kiểm tra, chỉnh sửa nội dung các chunk trước khi đưa vào RAG.</Text>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Duyệt nội dung tài liệu (Human-in-the-loop)</h3>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
+                  Admin kiểm tra, chỉnh sửa nội dung các chunk trước khi đưa vào RAG.
+                </p>
+              </div>
+            </div>
             
             <Card style={{ marginTop: '16px', marginBottom: '24px' }}>
                 <Row justify="space-between" align="middle">

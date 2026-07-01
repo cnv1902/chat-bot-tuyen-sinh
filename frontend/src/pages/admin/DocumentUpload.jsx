@@ -156,10 +156,10 @@ const DocumentUpload = () => {
             <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
                     <div>
-                        <Title level={4} style={{ textTransform: 'uppercase', margin: 0 }}>Quản lý & Upload Tài Liệu RAG</Title>
-                        <Text type="secondary" style={{ marginTop: '6px', display: 'block' }}>
+                        <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Quản lý & Upload Tài Liệu RAG</h3>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
                             Upload file văn bản để AI học và trả lời câu hỏi của thí sinh.
-                        </Text>
+                        </p>
                     </div>
                 </div>
             

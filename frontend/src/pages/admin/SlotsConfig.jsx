@@ -112,11 +112,13 @@ export default function SlotsConfig() {
 
   return (
     <div className="admin-card">
-      <div style={{ borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
-        <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase' }}>Phân công nhiệm vụ LLM</h3>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-          Phân phối model AI cụ thể cho 2 công đoạn: OCR trích xuất PDF và Chat suy luận RAG.
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
+        <div>
+          <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Phân công nhiệm vụ LLM</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
+            Phân phối model AI cụ thể cho 2 công đoạn: OCR trích xuất PDF và Chat suy luận RAG.
+          </p>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }} className="slot-grid-layout">

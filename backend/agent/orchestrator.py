@@ -11,15 +11,19 @@ from typing import Any
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-from agent.tools import query_admission_data, search_unstructured_knowledge
+from agent.tools import query_admission_data, search_unstructured_knowledge, check_admission_eligibility
 from llm import get_langchain_chat_model
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """Bạn là chuyên gia tư vấn tuyển sinh ĐH Vinh. Hãy phân tích kỹ câu hỏi. 
-Nếu hỏi con số/mã ngành, dùng query_admission_data. 
+
+Mệnh lệnh 1: Nếu thí sinh cung cấp điểm số cá nhân cụ thể và hỏi 'Em có đỗ không?', 'Điểm của em thế này đỗ không?', BẮT BUỘC phải dùng công cụ check_admission_eligibility để thẩm định.
+Mệnh lệnh 2: Nếu thí sinh chỉ hỏi thông tin chung như 'Ngành IT lấy bao nhiêu điểm?', 'Chỉ tiêu bao nhiêu?', dùng công cụ query_admission_data.
+
 Nếu hỏi mô tả/đời sống/điều kiện, dùng search_unstructured_knowledge. 
 Nếu hỏi cả hai, gọi tuần tự. 
+Tuyệt đối không tự tính toán hệ số điểm hay điểm ưu tiên, hãy phó thác hoàn toàn cho công cụ.
 Chỉ trả lời dựa trên kết quả Tool. 
 Nếu không có dữ liệu, hãy xin SĐT để cán bộ liên hệ.
 Hãy trả lời thân thiện, mạch lạc, dễ hiểu."""
@@ -38,7 +42,7 @@ async def run_agent(user_message: str, chat_history: list[dict], session_id: str
         return "Hệ thống đang bảo trì phần trí tuệ nhân tạo. Vui lòng quay lại sau.", []
 
     # Khởi tạo tools
-    tools = [query_admission_data, search_unstructured_knowledge]
+    tools = [query_admission_data, search_unstructured_knowledge, check_admission_eligibility]
 
     import datetime
     current_year = datetime.datetime.now().year

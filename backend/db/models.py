@@ -319,3 +319,24 @@ class AdmissionCode(Base):
 
     def __repr__(self) -> str:
         return f"<AdmissionCode {self.admission_code} - {self.program_name}>"
+
+
+class QAStaging(Base):
+    """
+    Hàng đợi Q&A (Human-in-the-Loop).
+    Lưu trữ câu hỏi và câu trả lời từ chat để Admin duyệt trước khi đẩy vào Qdrant cache.
+    """
+    __tablename__ = "qa_staging"
+
+    id:         Mapped[int]      = mapped_column(Integer, primary_key=True, autoincrement=True)
+    question:   Mapped[str]      = mapped_column(Text, nullable=False)
+    answer:     Mapped[str]      = mapped_column(Text, nullable=False)
+    status:     Mapped[str]      = mapped_column(String(20), default="pending", index=True) # pending, approved
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"<QAStaging id={self.id} status={self.status!r}>"

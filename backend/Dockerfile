@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Sao chép file requirements.txt và cài đặt dependency trước
 # (Lợi dụng Docker cache layer để không phải cài lại package nếu requirements không đổi)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
 
 # Khởi tạo trước cache directory cho HuggingFace để Embedding Model có thể download offline (tuỳ chọn)
 ENV HF_HOME=/app/.cache/huggingface

@@ -22,7 +22,7 @@ import os
 import uuid as uuid_lib
 from pathlib import Path
 
-from sentence_transformers import SentenceTransformer
+from core.embedder import embed_batch
 from qdrant_client import models as qmodels
 
 from indexing.text_utils import normalize_scope, repair_mojibake, repair_text_tree
@@ -84,7 +84,6 @@ def get_embed_model() -> SentenceTransformer:
 
 def build_points(
     chunks: list[dict],
-    model: SentenceTransformer,
     batch_size: int = 32,
 ) -> list[qmodels.PointStruct]:
     """
@@ -92,7 +91,6 @@ def build_points(
 
     Args:
         chunks:     Danh sách dict {"content": str, "metadata": dict}.
-        model:      SentenceTransformer model đã load.
         batch_size: Số chunk encode mỗi batch.
 
     Returns:
@@ -105,16 +103,11 @@ def build_points(
     texts = [c["content"] for c in normalized_chunks]
 
     logger.info("[Indexer] Encoding %d chunks (batch_size=%d)...", len(texts), batch_size)
-    vectors = model.encode(
-        texts,
-        batch_size=batch_size,
-        normalize_embeddings=True,
-        show_progress_bar=len(texts) > 20,
-        convert_to_numpy=True,
-    )
+    # Sử dụng embed_batch (đã hỗ trợ Hybrid Dense + Sparse)
+    hybrid_vectors = embed_batch(texts, batch_size=batch_size)
 
     points = []
-    for chunk, vector in zip(normalized_chunks, vectors):
+    for chunk, hybrid_vec in zip(normalized_chunks, hybrid_vectors):
         meta = chunk.get("metadata", {})
         scope = normalize_scope(meta.get("scope", meta.get("faculty", "all")))
 
@@ -140,7 +133,13 @@ def build_points(
 
         points.append(qmodels.PointStruct(
             id=point_id,
-            vector=vector.tolist(),
+            vector={
+                "dense": hybrid_vec["dense"],
+                "sparse": qmodels.SparseVector(
+                    indices=hybrid_vec["sparse_indices"],
+                    values=hybrid_vec["sparse_values"]
+                )
+            },
             payload=payload,
         ))
 
@@ -160,7 +159,6 @@ def _normalize_chunk(chunk: dict) -> dict:
 def index_chunks(
     chunks: list[dict],
     qdrant_client,
-    model: SentenceTransformer,
     collection: str,
     batch_size: int = 100,
 ) -> int:
@@ -170,7 +168,6 @@ def index_chunks(
     Args:
         chunks:         Danh sách chunks từ chunker.py.
         qdrant_client:  QdrantClient đã kết nối.
-        model:          SentenceTransformer model.
         collection:     Tên collection Qdrant.
         batch_size:     Số points mỗi batch upsert.
 
@@ -181,7 +178,7 @@ def index_chunks(
         logger.warning("[Indexer] Không có chunks để index.")
         return 0
 
-    points = build_points(chunks, model)
+    points = build_points(chunks, batch_size=int(os.getenv("EMBED_BATCH_SIZE", "32")))
     if not points:
         return 0
 

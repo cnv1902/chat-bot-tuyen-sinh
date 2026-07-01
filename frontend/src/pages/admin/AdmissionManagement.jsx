@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Typography, message, Tabs, Modal, Form, Input, Space, Popconfirm, Select } from 'antd';
+import { Table, Button, Typography, message, Tabs, Modal, Form, Input, Space, Select } from 'antd';
 import { Upload, RefreshCw, FileText, Layers, List, Plus, Edit, Trash2 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
+import DeleteConfirmModal from '../../components/admin/DeleteConfirmModal';
 
 const { Title, Text } = Typography;
 
@@ -14,6 +15,7 @@ export default function AdmissionManagement() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState({ plans: false, quotas: false, methods: false, combinations: false });
   const [filterYear, setFilterYear] = useState('2026');
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: '', record: null, resourceType: '', isDeleting: false });
 
   // Modals for Methods and Combinations
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -110,6 +112,7 @@ export default function AdmissionManagement() {
   };
 
   const handleDelete = async (record, tab) => {
+    setDeleteModal(prev => ({ ...prev, isDeleting: true }));
     let url = '';
     if (tab === 'methods') url = `${API_URL}/api/admission_crud/methods/${record.id}`;
     if (tab === 'combinations') url = `${API_URL}/api/admission_crud/combinations/${record.combo_code}`;
@@ -123,11 +126,13 @@ export default function AdmissionManagement() {
       fetchData();
     } catch (err) {
       message.error(err.message);
+    } finally {
+      setDeleteModal({ isOpen: false, type: '', record: null, resourceType: '', isDeleting: false });
     }
   };
 
   const handleBulkDelete = async () => {
-    if (selectedRowKeys.length === 0) return;
+    setDeleteModal(prev => ({ ...prev, isDeleting: true }));
     
     let url = '';
     if (activeTab === 'methods') url = `${API_URL}/api/admission_crud/methods/bulk-delete`;
@@ -147,7 +152,14 @@ export default function AdmissionManagement() {
       fetchData();
     } catch (err) {
       message.error(err.message);
+    } finally {
+      setDeleteModal({ isOpen: false, type: '', record: null, resourceType: '', isDeleting: false });
     }
+  };
+
+  const confirmDelete = () => {
+    if (deleteModal.type === 'single') handleDelete(deleteModal.record, deleteModal.resourceType);
+    else if (deleteModal.type === 'bulk') handleBulkDelete();
   };
 
   const openModal = (type, tab, record = null) => {
@@ -248,9 +260,7 @@ export default function AdmissionManagement() {
       render: (_, record) => (
         <Space>
           <Button icon={<Edit size={16} />} type="text" onClick={() => openModal('edit', 'plans', record)} />
-          <Popconfirm title="Xóa đề án này?" onConfirm={() => handleDelete(record, 'plans')}>
-            <Button icon={<Trash2 size={16} />} type="text" danger />
-          </Popconfirm>
+          <Button icon={<Trash2 size={16} />} type="text" danger onClick={() => setDeleteModal({ isOpen: true, type: 'single', record, resourceType: 'plans', isDeleting: false })} />
         </Space>
       )
     }
@@ -265,9 +275,7 @@ export default function AdmissionManagement() {
       render: (_, record) => (
         <Space>
           <Button icon={<Edit size={16} />} type="text" onClick={() => openModal('edit', 'methods', record)} />
-          <Popconfirm title="Xóa phương thức này?" onConfirm={() => handleDelete(record, 'methods')}>
-            <Button icon={<Trash2 size={16} />} type="text" danger />
-          </Popconfirm>
+          <Button icon={<Trash2 size={16} />} type="text" danger onClick={() => setDeleteModal({ isOpen: true, type: 'single', record, resourceType: 'methods', isDeleting: false })} />
         </Space>
       )
     }
@@ -282,9 +290,7 @@ export default function AdmissionManagement() {
       render: (_, record) => (
         <Space>
           <Button icon={<Edit size={16} />} type="text" onClick={() => openModal('edit', 'quotas', record)} />
-          <Popconfirm title="Xóa chỉ tiêu này?" onConfirm={() => handleDelete(record, 'quotas')}>
-            <Button icon={<Trash2 size={16} />} type="text" danger />
-          </Popconfirm>
+          <Button icon={<Trash2 size={16} />} type="text" danger onClick={() => setDeleteModal({ isOpen: true, type: 'single', record, resourceType: 'quotas', isDeleting: false })} />
         </Space>
       )
     }
@@ -298,9 +304,7 @@ export default function AdmissionManagement() {
       render: (_, record) => (
         <Space>
           <Button icon={<Edit size={16} />} type="text" onClick={() => openModal('edit', 'combinations', record)} />
-          <Popconfirm title="Xóa tổ hợp này?" onConfirm={() => handleDelete(record, 'combinations')}>
-            <Button icon={<Trash2 size={16} />} type="text" danger />
-          </Popconfirm>
+          <Button icon={<Trash2 size={16} />} type="text" danger onClick={() => setDeleteModal({ isOpen: true, type: 'single', record, resourceType: 'combinations', isDeleting: false })} />
         </Space>
       )
     }
@@ -321,10 +325,10 @@ export default function AdmissionManagement() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1.5px solid var(--border-color)', paddingBottom: '16px', marginBottom: '24px' }}>
           <div>
-            <Title level={4} style={{ textTransform: 'uppercase', margin: 0 }}>Quản lý Đề Án Tuyển Sinh</Title>
-            <Text type="secondary" style={{ marginTop: '6px', display: 'block' }}>
+            <h3 style={{ fontSize: '1.3rem', textTransform: 'uppercase', margin: 0 }}>Quản lý Đề Án Tuyển Sinh</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px', marginBottom: 0 }}>
               Cấu hình thông tin xét tuyển, phương thức, và tổ hợp môn.
-            </Text>
+            </p>
           </div>
           
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -337,11 +341,9 @@ export default function AdmissionManagement() {
             <Button icon={<RefreshCw size={16} />} onClick={fetchData} loading={loading}>Làm mới</Button>
 
             {selectedRowKeys.length > 0 && (
-              <Popconfirm title={`Xóa ${selectedRowKeys.length} mục đã chọn?`} onConfirm={handleBulkDelete}>
-                <Button danger icon={<Trash2 size={16} />}>
-                  Xóa ({selectedRowKeys.length})
-                </Button>
-              </Popconfirm>
+              <Button danger onClick={() => setDeleteModal({ isOpen: true, type: 'bulk', record: null, resourceType: '', isDeleting: false })}>
+                Xóa {selectedRowKeys.length} mục
+              </Button>
             )}
 
             {activeTab !== 'plans' && activeTab !== 'quotas' && (
@@ -445,6 +447,15 @@ export default function AdmissionManagement() {
           </div>
         </Form>
       </Modal>
+
+      <DeleteConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, type: '', record: null, resourceType: '', isDeleting: false })}
+        onConfirm={confirmDelete}
+        title="Xác nhận xóa"
+        description={deleteModal.type === 'bulk' ? `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} mục đã chọn? Hành động này không thể hoàn tác.` : "Bạn có chắc chắn muốn xóa mục này? Hành động này không thể hoàn tác."}
+        isDeleting={deleteModal.isDeleting}
+      />
     </div>
   );
 }

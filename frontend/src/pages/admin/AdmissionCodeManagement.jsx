@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { Upload, Search, FileText, Hash, BookOpen, Edit, Trash2, AlertCircle, ChevronDown, ChevronRight, School } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Download, Upload, AlertCircle, RefreshCw, BookOpen, ChevronDown, ChevronRight, School, FileText, Hash } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
+import DeleteConfirmModal from '../../components/admin/DeleteConfirmModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -568,51 +569,22 @@ export default function AdmissionCodeManagement() {
               </form>
             )}
 
-            {/* Delete Modal */}
-            {modalState.type === 'delete' && (
-              <div>
-                <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-                    <AlertCircle size={24} />
-                  </div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#1e293b' }}>Xác nhận xóa</h3>
-                </div>
-                <div style={{ padding: '20px', color: '#475569' }}>
-                  Bạn có chắc chắn muốn xóa mã xét tuyển <strong>{modalState.data?.admissionCode}</strong>? Hành động này không thể hoàn tác.
-                </div>
-                <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                  <button onClick={closeModal} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer' }}>Hủy</button>
-                  <button onClick={handleDeleteConfirm} disabled={submitting} style={{ padding: '8px 16px', border: 'none', borderRadius: '6px', background: '#ef4444', color: 'white', cursor: submitting ? 'not-allowed' : 'pointer' }}>
-                    {submitting ? 'Đang xóa...' : 'Xóa dữ liệu'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Bulk Delete Modal */}
-            {modalState.type === 'bulk_delete' && (
-              <div>
-                <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-                    <AlertCircle size={24} />
-                  </div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#1e293b' }}>Xác nhận xóa hàng loạt</h3>
-                </div>
-                <div style={{ padding: '20px', color: '#475569' }}>
-                  Bạn có chắc chắn muốn xóa <strong>{selectedIds.length}</strong> mục đã chọn? Hành động này không thể hoàn tác.
-                </div>
-                <div style={{ padding: '20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                  <button onClick={closeModal} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer' }}>Hủy</button>
-                  <button onClick={handleBulkDeleteConfirm} disabled={submitting} style={{ padding: '8px 16px', border: 'none', borderRadius: '6px', background: '#ef4444', color: 'white', cursor: submitting ? 'not-allowed' : 'pointer' }}>
-                    {submitting ? 'Đang xóa...' : 'Xóa dữ liệu'}
-                  </button>
-                </div>
-              </div>
-            )}
-
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={modalState.type === 'delete' || modalState.type === 'bulk_delete'}
+        onClose={closeModal}
+        onConfirm={modalState.type === 'delete' ? handleDeleteConfirm : handleBulkDeleteConfirm}
+        title={modalState.type === 'delete' ? "Xác nhận xóa" : "Xác nhận xóa hàng loạt"}
+        description={
+          modalState.type === 'delete' 
+            ? <>Bạn có chắc chắn muốn xóa mã xét tuyển <strong>{modalState.data?.admissionCode}</strong>? Hành động này không thể hoàn tác.</>
+            : <>Bạn có chắc chắn muốn xóa <strong>{selectedIds.length}</strong> mục đã chọn? Hành động này không thể hoàn tác.</>
+        }
+        isDeleting={submitting}
+      />
     </div>
   );
 }

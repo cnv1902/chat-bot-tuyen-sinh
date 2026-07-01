@@ -176,10 +176,10 @@ def _build_filter(filters: dict[str, Any]) -> Optional[qmodels.Filter]:
 # ---------------------------------------------------------------------------
 
 def search(
-    query_vector: list[float],
+    query_vector: dict,
     filters: dict[str, Any] | None = None,
     top_k: int = 5,
-    score_threshold: float = 0.3,
+    score_threshold: float = 0.01, # RRF score threshold thường rất thấp
 ) -> list[dict]:
     """
     Tìm kiếm semantic các chunks liên quan nhất trong Qdrant.
@@ -190,11 +190,10 @@ def search(
     - Soft search: Cosine similarity trên vector embedding trong không gian đã lọc.
 
     Args:
-        query_vector:    Vector embedding của câu hỏi người dùng (dim 1024).
+        query_vector:    Dict chứa 'dense', 'sparse_indices', 'sparse_values' (từ bge-m3).
         filters:         Dict metadata filter từ agent (None = không filter).
         top_k:           Số lượng kết quả trả về tối đa.
-        score_threshold: Ngưỡng similarity tối thiểu — loại bỏ kết quả quá kém.
-                         0.3 là ngưỡng thực nghiệm tốt với bge-m3 + Cosine.
+        score_threshold: Ngưỡng RRF score tối thiểu. RRF score thường từ 0.01-0.03.
 
     Returns:
         List[dict] chuẩn hóa, mỗi phần tử gồm:
@@ -217,12 +216,27 @@ def search(
             qdrant_filter,
         )
 
-        # query_points — API chính thức từ qdrant-client v1.7+
-        # .search() đã bị deprecated và removed trong bản mới
+        # Hybrid Search bằng Prefetch + Reciprocal Rank Fusion (RRF)
         response = client.query_points(
             collection_name=collection,
-            query=query_vector,            # float list — vector embedding
-            query_filter=qdrant_filter,
+            prefetch=[
+                qmodels.Prefetch(
+                    query=query_vector["dense"],
+                    using="dense",
+                    limit=top_k * 2,
+                    filter=qdrant_filter,
+                ),
+                qmodels.Prefetch(
+                    query=qmodels.SparseVector(
+                        indices=query_vector["sparse_indices"],
+                        values=query_vector["sparse_values"]
+                    ),
+                    using="sparse",
+                    limit=top_k * 2,
+                    filter=qdrant_filter,
+                )
+            ],
+            query=qmodels.FusionQuery(fusion=qmodels.Fusion.RRF),
             limit=top_k,
             score_threshold=score_threshold,
             with_payload=True,
@@ -289,17 +303,24 @@ def setup_collection(
 
         client.create_collection(
             collection_name=name,
-            vectors_config=qmodels.VectorParams(
-                size=dim,
-                distance=qmodels.Distance.COSINE,
-            ),
+            vectors_config={
+                "dense": qmodels.VectorParams(
+                    size=dim,
+                    distance=qmodels.Distance.COSINE,
+                )
+            },
+            sparse_vectors_config={
+                "sparse": qmodels.SparseVectorParams(
+                    modifier=qmodels.Modifier.IDF
+                )
+            },
             # Tối ưu cho dataset nhỏ-vừa (<1M vectors) — không cần HNSW phức tạp
             optimizers_config=qmodels.OptimizersConfigDiff(
                 indexing_threshold=20_000,    # Bắt đầu build index khi có 20k vectors
             ),
         )
         logger.info(
-            "[VectorDB] Đã tạo collection '%s' | dim=%d | metric=COSINE.", name, dim
+            "[VectorDB] Đã tạo collection '%s' | Named Vectors: dense(dim=%d), sparse.", name, dim
         )
 
         # Tạo payload indexes để filter nhanh (quan trọng cho performance)
@@ -386,6 +407,41 @@ def upsert_points(
             "[VectorDB] Lỗi upsert points: %s", str(e), exc_info=True
         )
         return total_upserted
+
+
+# ---------------------------------------------------------------------------
+# Search QA Semantic Cache
+# ---------------------------------------------------------------------------
+def search_qa_cache(
+    query_vector: dict,
+    score_threshold: float = 0.85,
+) -> dict | None:
+    """
+    Tra cứu nhanh trong bộ đệm Q&A đã duyệt.
+    """
+    try:
+        client = _get_client()
+        collection = "qa_semantic_cache"
+
+        response = client.query_points(
+            collection_name=collection,
+            query=query_vector["dense"],
+            using="dense",
+            limit=1,
+            score_threshold=score_threshold,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        if response.points:
+            hit = response.points[0]
+            logger.info("[VectorDB] ⚡ SEMANTIC CACHE HIT ⚡ (Score: %.4f)", hit.score)
+            return dict(hit.payload or {})
+            
+        return None
+    except Exception as e:
+        logger.error("[VectorDB] Lỗi khi search QA Semantic Cache: %s", str(e))
+        return None
 
 
 # ---------------------------------------------------------------------------

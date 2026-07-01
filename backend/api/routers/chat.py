@@ -17,8 +17,14 @@ from agent.orchestrator import run_agent
 from api.schemas import ChatRequest, ChatResponse
 from core.session import get_history, save_history
 from core.interceptor_service import check_interceptor
+from db.connection import get_db, AsyncSessionLocal
+from db.crud import get_slot
 from llm import get_langchain_chat_model
+from db.models import QAStaging
 from langchain_core.messages import HumanMessage, SystemMessage
+from core.event_bus import publish_qa_event
+from core.embedder import embed
+from core.vectordb import search_qa_cache
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,24 @@ async def summarize_history_task(session_id: str, chat_history: list[dict]):
 # ---------------------------------------------------------------------------
 # Endpoint: POST /api/chat
 # ---------------------------------------------------------------------------
+
+async def save_qa_staging_task(question: str, answer: str) -> None:
+    """Background task lưu lại Q&A vào bảng qa_staging để duyệt"""
+    try:
+        async with AsyncSessionLocal() as db:
+            new_qa = QAStaging(
+                question=question,
+                answer=answer,
+                status="pending"
+            )
+            db.add(new_qa)
+            await db.commit()
+            logger.info("[QAStaging] Đã lưu Q&A vào hàng đợi chờ duyệt")
+            
+            # Publish event via SSE
+            await publish_qa_event("new_qa", {"id": new_qa.id})
+    except Exception as e:
+        logger.error("[QAStaging] Lỗi lưu Q&A staging: %s", str(e))
 
 @router.post(
     "/chat",
@@ -101,6 +125,31 @@ async def chat_endpoint(req: ChatRequest, request: Request, background_tasks: Ba
             sources=[],
         )
 
+    # ── [1.5] Semantic Cache Check ──
+    try:
+        query_vector = embed(req.message)
+        cached_qa = search_qa_cache(query_vector, score_threshold=0.85)
+        
+        if cached_qa:
+            logger.info("[Chat/%s] ⚡ Phản hồi tức thì từ Semantic Cache.", request_id)
+            
+            chat_history = get_history(req.session_id)
+            chat_history.append({"role": "user", "content": req.message})
+            chat_history.append({"role": "assistant", "content": cached_qa.get("answer", "")})
+            
+            if len(chat_history) > 6:
+                background_tasks.add_task(summarize_history_task, req.session_id, chat_history.copy())
+            else:
+                save_history(req.session_id, chat_history)
+                
+            return ChatResponse(
+                session_id=req.session_id,
+                answer=cached_qa.get("answer", ""),
+                sources=["Semantic Cache"],
+            )
+    except Exception as e:
+        logger.warning("[Chat/%s] Lỗi kiểm tra Semantic Cache: %s", request_id, str(e))
+
     # ── [2] Lấy lịch sử từ Redis ──
     chat_history = get_history(req.session_id)
     
@@ -137,6 +186,9 @@ async def chat_endpoint(req: ChatRequest, request: Request, background_tasks: Ba
         save_ok = save_history(req.session_id, chat_history)
         if not save_ok:
             logger.warning("[Chat/%s] Lỗi lưu Redis.", request_id)
+
+    # ── [4.2] Lưu Q&A vào bảng staging ──
+    background_tasks.add_task(save_qa_staging_task, req.message, bot_answer)
 
     # ── [5] Trả response ──
     elapsed_ms = round((time.perf_counter() - start_time) * 1000)

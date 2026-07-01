@@ -37,6 +37,14 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
           Quản lý & Upload Tài liệu
         </NavLink>
         <NavLink
+          to="/admin/qa-approval"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <Activity size={18} />
+          Kiểm duyệt Q&A Cache
+        </NavLink>
+        <NavLink
           to="/admin/academic-structure"
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
           onClick={handleNavClick}
@@ -53,6 +61,14 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
           Quản lý Mã Xét Tuyển
         </NavLink>
         <NavLink
+          to="/admin/admission-plans"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <FileText size={18} />
+          Đề án Tuyển sinh
+        </NavLink>
+        <NavLink
           to="/admin/staff"
           className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
           onClick={handleNavClick}
@@ -67,14 +83,6 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
         >
           <UserCheck size={18} />
           Quản lý Thí sinh
-        </NavLink>
-        <NavLink
-          to="/admin/admission-plans"
-          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
-          onClick={handleNavClick}
-        >
-          <FileText size={18} />
-          Đề án Tuyển sinh
         </NavLink>
         <NavLink
           to="/admin/providers"

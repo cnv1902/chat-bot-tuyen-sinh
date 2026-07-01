@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 from db.connection import get_db
 from db.models import Major, SubjectCombination, AdmissionMethod, AdmissionPlan, AdmissionCode, AdmissionQuota
 
+def get_batches(lst: list, batch_size: int = 50):
+    """Chia một list thành các list nhỏ có kích thước batch_size."""
+    for i in range(0, len(lst), batch_size):
+        yield lst[i:i + batch_size]
+
 router = APIRouter(prefix="/api/admission", tags=["admission"])
 
 @router.post("/import-combinations")
@@ -215,9 +220,12 @@ async def import_plans(file: UploadFile = File(...), db: AsyncSession = Depends(
     if not records:
         raise HTTPException(status_code=400, detail="Không tìm thấy dòng dữ liệu nào hợp lệ.")
         
-    db.add_all(records)
+    BATCH_SIZE = 50
     try:
-        await db.commit()
+        for batch in get_batches(records, BATCH_SIZE):
+            db.add_all(batch)
+            await db.commit()
+            logger.info(f"Đã import batch {len(batch)} bản ghi thành công.")
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=f"Lỗi lưu Database: {str(e)}")
