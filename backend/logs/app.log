@@ -1250,3 +1250,28 @@ ValueError: too many values to unpack (expected 2)
 2026-06-30 23:46:08 [INFO    ] core.vectordb — [VectorDB] Tìm thấy 3 kết quả (ngưỡng score >= 0.30).
 2026-06-30 23:46:08 [INFO    ] agent.tools — [Tool] Search thành công ở Bước 3 (Pure Semantic).
 2026-06-30 23:46:12 [INFO    ] api.routers.chat — [Chat/20ea9693] ═══ HOÀN THÀNH ═══ 9679ms | sources=1 | answer=1248 ký tự
+2026-07-01 01:03:45 [INFO    ] core.parser_service — [Parser] Bắt đầu xử lý document ID 13 từ /app/data/uploads/Quy chế tuyển sinh - Hướng dẫn xét đối tượng, khu vực.docx
+2026-07-01 01:03:45 [INFO    ] core.parser_service — [Parser] Generic mode: MarkItDown cho .docx
+2026-07-01 01:03:47 [INFO    ] core.parser_service — [Parser] Document 13: tổng 43 chunks (0 table chunks, 43 prose chunks)
+2026-07-01 01:03:47 [INFO    ] core.parser_service — [Parser] Đã tạo 43 chunks cho document 13. Chờ Admin duyệt.
+2026-07-01 01:04:18 [INFO    ] core.qdrant_service — [QdrantService] Bắt đầu duyệt và embed 43 chunks cho document 13
+2026-07-01 01:05:14 [INFO    ] core.vectordb — [VectorDB] Hoàn thành upsert 43/43 points vào 'tuyen_sinh_dhv'.
+2026-07-01 01:05:14 [INFO    ] core.qdrant_service — [QdrantService] Hoàn tất đẩy 43 vectors lên Qdrant cho doc 13
+2026-07-01 01:06:43 [INFO    ] api.routers.chat — [Chat/8e6a5751] ═══ REQUEST ═══ session=e601980a-c377-4ab0-b62e-1c7b6671cb86 | msg='Những đối tượng thuộc diện xét tuyển ưu tiên, tuyển thẳng'
+2026-07-01 01:06:43 [INFO    ] agent.orchestrator — [Orchestrator] Khởi chạy Agent cho session e601980a-c377-4ab0-b62e-1c7b6671cb86
+2026-07-01 01:06:45 [INFO    ] agent.tools — [Tool] search_unstructured_knowledge called: query='Đối tượng xét tuyển ưu tiên, tuyển thẳng', year=2026, doc_type=None
+2026-07-01 01:06:46 [INFO    ] core.vectordb — [VectorDB] Tìm thấy 3 kết quả (ngưỡng score >= 0.30).
+2026-07-01 01:06:46 [INFO    ] agent.tools — [Tool] Search thành công ở Bước 1 (Strict filter).
+2026-07-01 01:06:53 [INFO    ] api.routers.chat — [Chat/8e6a5751] ═══ HOÀN THÀNH ═══ 10229ms | sources=1 | answer=1228 ký tự
+2026-07-01 01:08:41 [INFO    ] api.routers.chat — [Chat/56ef4c27] ═══ REQUEST ═══ session=e601980a-c377-4ab0-b62e-1c7b6671cb86 | msg='cách xác định khu vực ưu tiên'
+2026-07-01 01:08:41 [INFO    ] agent.orchestrator — [Orchestrator] Khởi chạy Agent cho session e601980a-c377-4ab0-b62e-1c7b6671cb86
+2026-07-01 01:08:43 [INFO    ] agent.tools — [Tool] search_unstructured_knowledge called: query='cách xác định khu vực ưu tiên', year=2026, doc_type=None
+2026-07-01 01:08:43 [INFO    ] core.vectordb — [VectorDB] Tìm thấy 3 kết quả (ngưỡng score >= 0.30).
+2026-07-01 01:08:43 [INFO    ] agent.tools — [Tool] Search thành công ở Bước 1 (Strict filter).
+2026-07-01 01:08:48 [INFO    ] api.routers.chat — [Chat/56ef4c27] ═══ HOÀN THÀNH ═══ 7256ms | sources=1 | answer=1008 ký tự
+2026-07-01 01:09:59 [INFO    ] api.routers.chat — [Chat/e491a068] ═══ REQUEST ═══ session=e601980a-c377-4ab0-b62e-1c7b6671cb86 | msg='Năm nay Trường lấy bao nhiêu chỉ tiêu cho ngành giáo dục mầm non'
+2026-07-01 01:09:59 [INFO    ] agent.orchestrator — [Orchestrator] Khởi chạy Agent cho session e601980a-c377-4ab0-b62e-1c7b6671cb86
+2026-07-01 01:10:01 [INFO    ] agent.tools — [Tool] query_admission_data called with: major_or_program=Giáo dục mầm non, year=2026, subject_group=None, method=None, exam_score=None, transcript_score=None
+2026-07-01 01:10:01 [INFO    ] agent.tools — [Tool] Fuzzy match cho 'Giáo dục mầm non' -> tìm thấy 28 records
+2026-07-01 01:10:01 [INFO    ] agent.tools — [Tool] Tìm thấy 28 kết quả phù hợp.
+2026-07-01 01:10:03 [INFO    ] api.routers.chat — [Chat/e491a068] ═══ HOÀN THÀNH ═══ 4220ms | sources=1 | answer=253 ký tự
