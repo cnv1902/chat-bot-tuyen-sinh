@@ -32,12 +32,14 @@ export default function GoogleCallback() {
           const data = await response.json();
           // Lưu token vào localStorage (tương tự như Admin login)
           localStorage.setItem('access_token', data.access_token);
-          if (data.user) {
-            localStorage.setItem('user_info', JSON.stringify(data.user));
-          }
-          
+          // data không có trường user (do TokenResponse định nghĩa), ta chỉ cần check data.role
           setStatus('Đăng nhập thành công! Đang chuyển hướng...');
-          setTimeout(() => navigate('/'), 1000);
+          
+          if (['ADMIN', 'STAFF_TRUONG', 'STAFF_NGANH'].includes(data.role)) {
+            setTimeout(() => navigate('/admin'), 1000);
+          } else {
+            setTimeout(() => navigate('/'), 1000);
+          }
         } else {
           const errorData = await response.json();
           setStatus(`Đăng nhập thất bại: ${errorData.detail || 'Lỗi không xác định'}`);

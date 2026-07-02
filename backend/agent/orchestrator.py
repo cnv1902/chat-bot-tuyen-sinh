@@ -11,10 +11,15 @@ from typing import Any
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-from agent.tools import query_admission_data, search_unstructured_knowledge, check_admission_eligibility
+from agent.tools import query_admission_data, search_unstructured_knowledge, check_admission_eligibility, request_human_handoff
 from llm import get_langchain_chat_model
 
 logger = logging.getLogger(__name__)
+
+class HandoffTriggeredException(Exception):
+    def __init__(self, handoff_data: dict):
+        self.handoff_data = handoff_data
+        super().__init__("Handoff was triggered.")
 
 SYSTEM_PROMPT = """Bạn là chuyên gia tư vấn tuyển sinh ĐH Vinh. Hãy phân tích kỹ câu hỏi. 
 
@@ -25,10 +30,10 @@ Nếu hỏi mô tả/đời sống/điều kiện, dùng search_unstructured_kno
 Nếu hỏi cả hai, gọi tuần tự. 
 Tuyệt đối không tự tính toán hệ số điểm hay điểm ưu tiên, hãy phó thác hoàn toàn cho công cụ.
 Chỉ trả lời dựa trên kết quả Tool. 
-Nếu không có dữ liệu, hãy xin SĐT để cán bộ liên hệ.
+Nếu không có dữ liệu, BẮT BUỘC dùng tool request_human_handoff để chuyển hướng kết nối cho tư vấn viên thực tế hỗ trợ. Tuyệt đối không tự sinh câu trả lời xin lỗi.
 Hãy trả lời thân thiện, mạch lạc, dễ hiểu."""
 
-async def run_agent(user_message: str, chat_history: list[dict], session_id: str) -> tuple[str, list[str]]:
+async def run_agent(user_message: str, chat_history: list[dict], session_id: str) -> tuple[str, list[str], dict]:
     """
     Thực thi Agent với tool calling và trả về (câu trả lời, danh sách nguồn).
     """
@@ -42,7 +47,7 @@ async def run_agent(user_message: str, chat_history: list[dict], session_id: str
         return "Hệ thống đang bảo trì phần trí tuệ nhân tạo. Vui lòng quay lại sau.", []
 
     # Khởi tạo tools
-    tools = [query_admission_data, search_unstructured_knowledge, check_admission_eligibility]
+    tools = [query_admission_data, search_unstructured_knowledge, check_admission_eligibility, request_human_handoff]
 
     import datetime
     current_year = datetime.datetime.now().year
@@ -67,20 +72,47 @@ async def run_agent(user_message: str, chat_history: list[dict], session_id: str
 
     # Thực thi
     try:
-        response = await agent.ainvoke({"messages": langchain_history})
+        messages = langchain_history.copy()
+        logger.info(f"[Orchestrator] Bắt đầu astream. Prompt hệ thống: {dynamic_system_prompt}")
         
-        # Output là list messages
-        messages = response.get("messages", [])
-        if not messages:
-            return "Không thể tạo ra câu trả lời.", []
-            
+        async for event in agent.astream({"messages": langchain_history}):
+            for node_name, node_output in event.items():
+                logger.info(f"[Orchestrator] astream event từ node: '{node_name}'")
+                
+                if "messages" in node_output:
+                    msgs = node_output["messages"]
+                    if not isinstance(msgs, list):
+                        msgs = [msgs]
+                        
+                    messages.extend(msgs)
+                    
+                    for m in msgs:
+                        logger.info(f"[Orchestrator] Node '{node_name}' sinh ra message: type={type(m).__name__}, name={getattr(m, 'name', 'None')}, content={repr(m.content)}")
+                    
+                    # Kiểm tra Handoff ngay khi tool chạy xong
+                    if node_name == "tools":
+                        for msg in msgs:
+                            from langchain_core.messages import ToolMessage
+                            if isinstance(msg, ToolMessage):
+                                logger.info(f"[Orchestrator] Kiểm tra ToolMessage: name={msg.name}, content={msg.content}")
+                                content_str = str(msg.content)
+                                if "__HANDOFF_TRIGGERED__" in content_str:
+                                    import json
+                                    try:
+                                        handoff_data = json.loads(content_str)
+                                        logger.info("[Orchestrator] Handoff thành công, ném Exception để EARLY RETURN.")
+                                        raise HandoffTriggeredException(handoff_data)
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"[Orchestrator] Lỗi parse JSON Handoff: {e} - Content: {content_str}")
+                                        pass
+                                        
         answer = messages[-1].content
+        logger.info(f"[Orchestrator] Hoàn thành astream. Answer LLM sinh ra: {answer}")
         
         # Trích xuất nguồn từ các tool call messages
         sources = []
         import re
         for msg in messages:
-            # Tìm các ToolMessage chứa nguồn
             if hasattr(msg, 'name') and msg.name in ["search_unstructured_knowledge", "query_admission_data"]:
                 content = str(msg.content)
                 found_sources = re.findall(r"--- Nguồn: (.*?) ---", content)
@@ -89,7 +121,9 @@ async def run_agent(user_message: str, chat_history: list[dict], session_id: str
         # Deduplicate sources
         unique_sources = list(dict.fromkeys(sources))
         
-        return answer, unique_sources
+        return answer, unique_sources, {}
+    except HandoffTriggeredException:
+        raise
     except Exception as e:
         logger.error(f"[Orchestrator] Lỗi khi invoke agent: {str(e)}")
-        return "Xin lỗi, đã xảy ra lỗi trong quá trình xử lý. Vui lòng thử lại sau.", []
+        return "Xin lỗi, đã xảy ra lỗi trong quá trình xử lý. Vui lòng thử lại sau.", [], {}

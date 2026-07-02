@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Menu, X, User, LogOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import DraggableStaffModal from './DraggableStaffModal';
 
-export default function AdminNavbar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
+export default function AdminNavbar({ isMobileMenuOpen, setIsMobileMenuOpen, showToast }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -13,6 +14,44 @@ export default function AdminNavbar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
     navigate('/admin/login');
   };
 
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [userInfo, setUserInfo] = useState(() => {
+    const str = localStorage.getItem('user_info');
+    return str ? JSON.parse(str) : null;
+  });
+
+  useEffect(() => {
+    const fetchMe = async () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/auth/me`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUserInfo(data);
+          localStorage.setItem('user_info', JSON.stringify(data));
+        }
+      } catch (err) {
+        console.error("Lỗi lấy thông tin user", err);
+      }
+    };
+    fetchMe();
+  }, []);
+  const handleProfileUpdated = () => {
+    // Bỏ qua việc lưu object trả về (vì API chỉ trả về {"message": "..."})
+    // Thay vào đó, tải lại trang để useEffect tự động gọi /api/auth/me và lưu bản cập nhật chính xác
+    window.location.reload(); 
+  };
+
+  const getInitial = () => {
+    if (!userInfo) return 'U';
+    const nameStr = userInfo.full_name || userInfo.email || 'User';
+    const words = nameStr.trim().split(' ');
+    const lastWord = words[words.length - 1];
+    return lastWord.charAt(0).toUpperCase();
+  };
 
   return (
     <header className="admin-header">
@@ -55,10 +94,19 @@ export default function AdminNavbar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
             fontWeight: 'bold',
             fontSize: '1rem',
             boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            overflow: 'hidden'
           }}
         >
-          A
+          {userInfo?.avatar_url ? (
+            <img 
+              src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${userInfo.avatar_url}`} 
+              alt="Avatar" 
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            />
+          ) : (
+            getInitial()
+          )}
         </div>
 
         {showDropdown && (
@@ -76,7 +124,7 @@ export default function AdminNavbar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
             overflow: 'hidden'
           }}>
             <button
-              onClick={() => { setShowDropdown(false); navigate('/admin/profile'); }}
+              onClick={() => { setShowDropdown(false); setIsProfileModalOpen(true); }}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -121,6 +169,15 @@ export default function AdminNavbar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
           </div>
         )}
       </div>
+
+      <DraggableStaffModal 
+        isOpen={isProfileModalOpen} 
+        onClose={() => setIsProfileModalOpen(false)} 
+        staffData={userInfo} 
+        onSuccess={handleProfileUpdated}
+        showToast={showToast}
+        isProfileMode={true}
+      />
     </header>
   );
 }

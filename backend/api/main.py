@@ -99,6 +99,7 @@ from api.routers import staff as staff_router
 from api.routers import candidate_router
 from api.routers import admission_code_router
 from api.routers import admin_qa as admin_qa_router
+from api.routers import support as support_router
 from api.schemas import ErrorResponse
 from core.embedder import warmup as embedder_warmup
 from core.vectordb import setup_collection
@@ -369,8 +370,9 @@ app.include_router(admission_code_router.router) # GET/POST /api/admissions
 app.include_router(staff_router.router)    # CRUD /api/staff/*
 app.include_router(candidate_router.router) # CRUD /api/candidate/*
 app.include_router(admin_qa_router.router) # GET/POST/PUT/DELETE /api/admin/qa-staging
+app.include_router(support_router.router)  # GET /api/admin/support/stream
 
-logger.info("[Router] Đã đăng ký: POST /api/chat | GET /health | /admin/* | /api/auth/* | /api/academic/* | /api/admission/* | /api/admin/qa-staging")
+logger.info("[Router] Đã đăng ký: POST /api/chat | GET /health | /admin/* | /api/auth/* | /api/academic/* | /api/admission/* | /api/admin/qa-staging | /api/admin/support/*")
 
 
 # ---------------------------------------------------------------------------

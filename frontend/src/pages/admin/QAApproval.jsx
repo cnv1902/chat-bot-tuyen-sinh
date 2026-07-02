@@ -25,6 +25,7 @@ export default function QAApproval() {
   // Approved Data State
   const [approvedData, setApprovedData] = useState([]);
   const [approvedLoading, setApprovedLoading] = useState(false);
+  const [approvedPagination, setApprovedPagination] = useState({ current: 1, pageSize: 20, total: 0 });
   const [importing, setImporting] = useState(false);
 
   // Delete Modal State
@@ -58,15 +59,17 @@ export default function QAApproval() {
   };
 
   // FETCH APPROVED DATA
-  const fetchApprovedData = async () => {
+  const fetchApprovedData = async (page = 1, pageSize = 20) => {
     setApprovedLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/admin/qa-approved`, {
+      const skip = (page - 1) * pageSize;
+      const res = await fetch(`${API_URL}/api/admin/qa-approved?skip=${skip}&limit=${pageSize}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
       });
       const json = await res.json();
       if (res.ok) {
         setApprovedData(json.data || []);
+        setApprovedPagination(prev => ({ ...prev, current: page, total: json.total, pageSize }));
         setSelectedApproved([]);
       } else {
         message.error(json.detail || 'Lỗi khi tải danh sách đã duyệt');
@@ -82,7 +85,7 @@ export default function QAApproval() {
     if (activeTab === 'staging') {
       fetchStagingData(pagination.current, pagination.pageSize);
     } else {
-      fetchApprovedData();
+      fetchApprovedData(approvedPagination.current, approvedPagination.pageSize);
     }
   }, [activeTab]);
 
@@ -174,7 +177,7 @@ export default function QAApproval() {
       if (res.ok) {
         showToast('Đã duyệt vào Semantic Cache', 'success');
         fetchStagingData(pagination.current, pagination.pageSize);
-        fetchApprovedData(); // Lấy dữ liệu mới cho tab approved
+        fetchApprovedData(approvedPagination.current, approvedPagination.pageSize); // Lấy dữ liệu mới cho tab approved
       } else {
         const json = await res.json();
         showToast(json.detail || 'Lỗi khi duyệt', 'error');
@@ -214,7 +217,7 @@ export default function QAApproval() {
       });
       if (res.ok) {
         showToast('Đã xóa khỏi Vector DB', 'success');
-        fetchApprovedData();
+        fetchApprovedData(approvedPagination.current, approvedPagination.pageSize);
       } else {
         showToast('Lỗi khi xóa', 'error');
       }
@@ -269,9 +272,9 @@ export default function QAApproval() {
         body: JSON.stringify({ ids: selectedApproved })
       });
       if (res.ok) {
-        showToast(`Đã xóa ${selectedApproved.length} Q&A`, 'success');
+        showToast(`Đã xóa ${selectedApproved.length} bản ghi khỏi Cache`, 'success');
         setSelectedApproved([]);
-        fetchApprovedData();
+        fetchApprovedData(approvedPagination.current, approvedPagination.pageSize);
       } else {
         showToast('Lỗi khi xóa hàng loạt', 'error');
       }
@@ -379,7 +382,7 @@ export default function QAApproval() {
             )}
 
             <button 
-              onClick={() => activeTab === 'staging' ? fetchStagingData(pagination.current, pagination.pageSize) : fetchApprovedData()} 
+              onClick={() => activeTab === 'staging' ? fetchStagingData(pagination.current, pagination.pageSize) : fetchApprovedData(approvedPagination.current, approvedPagination.pageSize)} 
               style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500 }}
             >
               <RefreshCw size={16} /> Làm mới
@@ -551,8 +554,8 @@ export default function QAApproval() {
 
         {/* TAB: ĐÃ DUYỆT */}
         {activeTab === 'approved' && (
-          <div style={{ overflowX: 'auto' }}>
-            {approvedLoading ? (
+          <div style={{ overflowX: 'auto', position: 'relative' }}>
+            {approvedLoading && approvedData.length === 0 ? (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Đang tải dữ liệu...</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2e8f0', fontSize: '0.95rem' }}>
@@ -652,6 +655,31 @@ export default function QAApproval() {
                   )}
                 </tbody>
               </table>
+            )}
+            
+            {/* Pagination Controls for Approved */}
+            {activeTab === 'approved' && approvedPagination.total > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderTop: '1px solid #e2e8f0', marginTop: '16px' }}>
+                <span style={{ fontSize: '0.9rem', color: '#64748b' }}>
+                  Đang xem {((approvedPagination.current - 1) * approvedPagination.pageSize) + 1} - {Math.min(approvedPagination.current * approvedPagination.pageSize, approvedPagination.total)} trong số {approvedPagination.total} bản ghi đã duyệt
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={() => fetchApprovedData(approvedPagination.current - 1, approvedPagination.pageSize)} 
+                    disabled={approvedPagination.current === 1} 
+                    style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '4px', backgroundColor: 'white', cursor: approvedPagination.current === 1 ? 'not-allowed' : 'pointer', color: approvedPagination.current === 1 ? '#94a3b8' : '#334155' }}
+                  >
+                    Trang trước
+                  </button>
+                  <button 
+                    onClick={() => fetchApprovedData(approvedPagination.current + 1, approvedPagination.pageSize)} 
+                    disabled={approvedPagination.current * approvedPagination.pageSize >= approvedPagination.total} 
+                    style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '4px', backgroundColor: 'white', cursor: approvedPagination.current * approvedPagination.pageSize >= approvedPagination.total ? 'not-allowed' : 'pointer', color: approvedPagination.current * approvedPagination.pageSize >= approvedPagination.total ? '#94a3b8' : '#334155' }}
+                  >
+                    Trang tiếp
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}

@@ -14,6 +14,7 @@ import StaffManagement from "./pages/admin/StaffManagement";
 import CandidateManagement from "./pages/admin/CandidateManagement";
 import AdmissionCodeManagement from "./pages/admin/AdmissionCodeManagement";
 import QAApproval from "./pages/admin/QAApproval";
+import OnlineSupport from "./pages/admin/OnlineSupport";
 
 // Component để bảo vệ các route cần đăng nhập
 const ProtectedRoute = () => {
@@ -21,6 +22,25 @@ const ProtectedRoute = () => {
   if (!token) {
     return <Navigate to="/admin/login" replace />;
   }
+
+  // Giải mã JWT để kiểm tra role (cấu trúc token: header.payload.signature)
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+
+    const payload = JSON.parse(jsonPayload);
+    if (payload.role === 'CANDIDATE') {
+      return <Navigate to="/" replace />;
+    }
+  } catch (e) {
+    console.error("Lỗi parse token", e);
+    // Nếu token không hợp lệ, chuyển ra ngoài
+    return <Navigate to="/" replace />;
+  }
+
   return <Outlet />;
 };
 
@@ -50,6 +70,7 @@ function App() {
             <Route path="staff" element={<StaffManagement />} />
             <Route path="candidates" element={<CandidateManagement />} />
             <Route path="qa-approval" element={<QAApproval />} />
+            <Route path="support" element={<OnlineSupport />} />
             <Route path="status" element={<SystemStatus />} />
           </Route>
         </Route>

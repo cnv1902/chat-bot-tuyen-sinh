@@ -116,23 +116,7 @@ def query_admission_data(
             am_lower = admission_method.lower().strip()
             cache_data = [r for r in cache_data if r.get("ma_phuong_thuc") and am_lower in r["ma_phuong_thuc"].lower()]
 
-        # Lọc theo major_or_program_name bằng Combined String Fuzzy Matching
-        if major_or_program_name:
-            normalized_target = normalize_and_map_alias(major_or_program_name)
-            matched_records = []
-            
-            for r in cache_data:
-                target_str = f"{r.get('ma_nganh', '')} {r.get('ten_nganh', '')} {r.get('ten_chuong_trinh', '')}".lower()
-                score = fuzz.WRatio(normalized_target, target_str)
-                if score > 70:
-                    matched_records.append(r)
-            
-            if not matched_records:
-                logger.warning(f"[Tool] Không tìm thấy ngành phù hợp với: '{major_or_program_name}'")
-                return f"Hệ thống không tìm thấy dữ liệu cho '{major_or_program_name}'. Hãy hướng dẫn thí sinh xác nhận lại."
-                
-            cache_data = matched_records
-            logger.info(f"[Tool] Fuzzy match cho '{major_or_program_name}' -> tìm thấy {len(matched_records)} records")
+        # (Bỏ qua fuzzy match ở đây, sẽ thực hiện sau khi lọc các tiêu chí khác)
             
         # Bước 2 (Lọc Điều kiện tối thiểu - Smart Thresholds)
         def safe_float(val):
@@ -153,18 +137,55 @@ def query_admission_data(
                 if not r.get("diem_hoc_ba") or (safe_float(r.get("diem_hoc_ba")) is not None and safe_float(r.get("diem_hoc_ba")) <= user_transcript_score)
             ]
             
-        # Bước 3 (Bảo vệ Token & JSON Grouping)
+        # Bước 3 (Filter First, Rank Later cho Tên ngành/Chương trình)
         if not cache_data:
             return "Không tìm thấy ngành học nào thỏa mãn điểm số hoặc điều kiện của bạn."
             
-        logger.info(f"[Tool] Tìm thấy {len(cache_data)} kết quả phù hợp.")
+        is_truncated = False
         
-        limit = 40 # Nới lỏng số dòng một chút vì JSON cấu trúc tiết kiệm token hơn
-        grouped_data = group_admission_records(cache_data[:limit])
-        
-        output_str = f"""Dưới đây là dữ liệu tuyển sinh dạng JSON đã được gom nhóm.
-[HƯỚNG DẪN ĐỌC DỮ LIỆU CỐT LÕI]:
+        def get_program_name(r):
+            p_name = r.get('ten_chuong_trinh')
+            if not p_name:
+                p_name = r.get('ten_nganh', 'Chưa rõ')
+            elif r.get('ten_nganh') and r.get('ten_nganh') not in p_name:
+                p_name = f"{r.get('ten_nganh')} - {p_name}"
+            return p_name
 
+        if major_or_program_name:
+            # Lấy danh sách tên chương trình duy nhất
+            unique_programs = list({get_program_name(r): True for r in cache_data}.keys())
+            
+            # Fuzzy match
+            if 'normalized_target' not in locals():
+                normalized_target = normalize_and_map_alias(major_or_program_name)
+                
+            extracted = process.extract(normalized_target, unique_programs, scorer=fuzz.WRatio, limit=4)
+            
+            # Lọc top 4 chương trình có score > 50
+            top_programs = [match[0] for match in extracted if match[1] > 50]
+            
+            if not top_programs:
+                return f"Hệ thống không tìm thấy chương trình nào phù hợp với '{major_or_program_name}' sau khi lọc các điều kiện. Hãy xác nhận lại với thí sinh."
+            
+            # Lọc lại cache_data chỉ lấy các record thuộc top_programs
+            cache_data = [r for r in cache_data if get_program_name(r) in top_programs]
+            logger.info(f"[Tool] Fuzzy match rank top programs -> tìm thấy {len(cache_data)} records")
+            
+        else:
+            # Trường hợp không hỏi tên ngành cụ thể
+            unique_programs = list({get_program_name(r): True for r in cache_data}.keys())
+            if len(unique_programs) > 10:
+                top_10_programs = unique_programs[:10]
+                is_truncated = True
+                cache_data = [r for r in cache_data if get_program_name(r) in top_10_programs]
+                logger.info(f"[Tool] Truncated to top 10 programs -> còn {len(cache_data)} records")
+
+        # Bước 4 (Tạo JSON Output)
+        logger.info(f"[Tool] Chuẩn bị xuất dữ liệu cho {len(cache_data)} kết quả phù hợp.")
+        
+        grouped_data = group_admission_records(cache_data)
+        
+        output_str = f"""[HƯỚNG DẪN ĐỌC DỮ LIỆU CỐT LÕI]
 1. Cấu trúc: Mỗi 'ten_chuong_trinh_dao_tao' là một nhánh chuyên ngành riêng biệt. Một ngành có thể có nhiều chuyên ngành và nhiều phương thức xét tuyển. Hãy liệt kê đầy đủ để không gây hiểu nhầm.
 2. Ràng buộc: Các điều kiện trong 'dieu_kien_phu' CHỈ áp dụng riêng cho phương thức xét tuyển chứa nó, TUYỆT ĐỐI KHÔNG áp dụng chung cho cả ngành.
 3. Giải nghĩa các trường dữ liệu điều kiện và tính điểm (Nếu có):
@@ -180,8 +201,8 @@ def query_admission_data(
 [DỮ LIỆU JSON]:
 {json.dumps(grouped_data, ensure_ascii=False, indent=2)}
 """
-        if len(cache_data) > limit:
-            output_str += f"\n... và {len(cache_data) - limit} bản ghi khác đã bị ẩn đi. Vui lòng hướng dẫn thí sinh cung cấp thêm thông tin để thu hẹp tìm kiếm."
+        if is_truncated:
+            output_str += "\n⚠️ CẢNH BÁO: Tìm thấy quá nhiều kết quả. Dưới đây là danh sách 10 chương trình tiêu biểu. Hãy yêu cầu thí sinh cung cấp thêm thông tin để thu hẹp tìm kiếm."
 
         return output_str
         
@@ -354,3 +375,37 @@ def search_unstructured_knowledge(
         lines.append(f"--- Nguồn: {source_file} ---\n{content}\n")
         
     return "Thông tin tìm thấy:\n\n" + "\n".join(lines)
+
+
+# ===========================================================================
+# Tool 3: request_human_handoff
+# ===========================================================================
+from core.staff_routing import find_best_staff
+import json
+
+class HumanHandoffInput(BaseModel):
+    target_major_or_program: Optional[str] = Field(None, description="Mã xét tuyển, mã ngành, hoặc tên chương trình đào tạo/tên ngành thí sinh đang quan tâm. Rất quan trọng để tìm đúng cán bộ.")
+    reason: str = Field(..., description="Lý do ngắn gọn tại sao cần chuyển máy cho người thật.")
+
+@tool("request_human_handoff", args_schema=HumanHandoffInput)
+def request_human_handoff(target_major_or_program: Optional[str] = None, reason: str = "") -> str:
+    """
+    Kích hoạt quy trình Human Handoff để chuyển cuộc trò chuyện cho Cán bộ tư vấn thực tế.
+    BẮT BUỘC SỬ DỤNG khi bot không có dữ liệu để trả lời, hoặc người dùng yêu cầu gặp người thật.
+    """
+    logger.info(f"[Tool] LLM yêu cầu Human Handoff. Ngành/Chương trình: {target_major_or_program}, Lý do: {reason}")
+    staff = find_best_staff(target_major_or_program)
+    if staff:
+        logger.info(f"[Tool] Handoff tìm thấy cán bộ: {staff['username']}")
+        handoff_data = {
+            "__HANDOFF_TRIGGERED__": True,
+            "staff_info": staff
+        }
+        return json.dumps(handoff_data)
+    else:
+        logger.info("[Tool] Handoff không tìm thấy cán bộ online.")
+        handoff_data = {
+            "__HANDOFF_TRIGGERED__": True,
+            "staff_info": None
+        }
+        return json.dumps(handoff_data)

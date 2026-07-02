@@ -326,3 +326,59 @@ def health_check() -> dict:
         return {"status": "ok", "latency_ms": latency_ms}
     except RedisError as e:
         return {"status": "error", "detail": str(e)}
+
+# ---------------------------------------------------------------------------
+# Handoff Session Management
+# ---------------------------------------------------------------------------
+
+def _handoff_key(session_id: str) -> str:
+    return f"handoff_session:{session_id}"
+
+def get_handoff_session(session_id: str) -> dict | None:
+    key = _handoff_key(session_id)
+    try:
+        client = _get_client()
+        raw = client.get(key)
+        if raw:
+            return json.loads(raw)
+        return None
+    except Exception as e:
+        logger.error(f"[Session] Lỗi lấy Handoff {session_id}: {e}")
+        return None
+
+def save_handoff_session(session_id: str, data: dict) -> bool:
+    key = _handoff_key(session_id)
+    try:
+        client = _get_client()
+        # Lưu trong 2 giờ
+        client.set(key, json.dumps(data, ensure_ascii=False), ex=7200)
+        return True
+    except Exception as e:
+        logger.error(f"[Session] Lỗi lưu Handoff {session_id}: {e}")
+        return False
+
+def delete_handoff_session(session_id: str) -> bool:
+    key = _handoff_key(session_id)
+    try:
+        client = _get_client()
+        client.delete(key)
+        return True
+    except Exception:
+        return False
+
+def get_all_handoff_sessions() -> list[dict]:
+    try:
+        client = _get_client()
+        keys = client.keys("handoff_session:*")
+        sessions = []
+        for k in keys:
+            raw = client.get(k)
+            if raw:
+                data = json.loads(raw)
+                data["session_id"] = k.replace("handoff_session:", "")
+                sessions.append(data)
+        # Sắp xếp mới nhất lên đầu (tùy ý)
+        return sorted(sessions, key=lambda x: x.get("updated_at", 0), reverse=True)
+    except Exception as e:
+        logger.error(f"[Session] Lỗi lấy danh sách Handoff: {e}")
+        return []

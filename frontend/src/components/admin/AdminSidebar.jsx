@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { FileText, FolderOpen, Key, Cpu, Activity, ArrowLeft, Users, UserCheck, Hash } from 'lucide-react';
+import { FileText, FolderOpen, Key, Cpu, Activity, ArrowLeft, Users, UserCheck, Hash, MessageCircle } from 'lucide-react';
 
 export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
   const navigate = useNavigate();
@@ -43,6 +43,14 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) 
         >
           <Activity size={18} />
           Kiểm duyệt Q&A Cache
+        </NavLink>
+        <NavLink
+          to="/admin/support"
+          className={({ isActive }) => `menu-item ${isActive ? 'active' : ''}`}
+          onClick={handleNavClick}
+        >
+          <MessageCircle size={18} />
+          Hỗ trợ trực tuyến
         </NavLink>
         <NavLink
           to="/admin/academic-structure"

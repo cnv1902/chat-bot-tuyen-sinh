@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Users, Upload, Search, Shield, Building, Library, Plus, X, Trash2, Edit, Loader2 } from 'lucide-react';
+import { Users, Upload, Search, Shield, Building, Library, Plus, X, Trash2, Edit, Loader2, Camera } from 'lucide-react';
 import DeleteConfirmModal from '../../components/admin/DeleteConfirmModal';
+import DraggableStaffModal from '../../components/admin/DraggableStaffModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -12,20 +13,12 @@ export default function StaffManagement() {
   const [uploading, setUploading] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, type: '', id: null, isDeleting: false });
   const [filterText, setFilterText] = useState('');
-  
+  const [institutes, setInstitutes] = useState([]);
+
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [editingStaffId, setEditingStaffId] = useState(null);
-  const [availableInstitutes, setAvailableInstitutes] = useState([]);
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    role: 'STAFF_NGANH',
-    major_codes: [],
-    is_active: true
-  });
-  
+  const [editingStaffData, setEditingStaffData] = useState(null);
+
   const [selectedRows, setSelectedRows] = useState([]);
 
   const fileInputRef = useRef(null);
@@ -53,10 +46,10 @@ export default function StaffManagement() {
       const res = await fetch(`${API_BASE}/api/academic/tree`);
       if (res.ok) {
         const data = await res.json();
-        setAvailableInstitutes(data);
+        setInstitutes(data);
       }
     } catch (error) {
-      console.error("Lỗi lấy danh sách ngành:", error);
+      console.error("Lỗi lấy danh sách trường/viện", error);
     }
   };
 
@@ -71,13 +64,13 @@ export default function StaffManagement() {
     if (!file) return;
 
     setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    const fd = new FormData();
+    fd.append('file', file);
 
     try {
       const res = await fetch(`${API_BASE}/api/staff/import`, {
         method: 'POST',
-        body: formData
+        body: fd
       });
       const data = await res.json();
 
@@ -102,52 +95,12 @@ export default function StaffManagement() {
     const lowerFilter = filterText.toLowerCase();
     return (
       (staff.email && staff.email.toLowerCase().includes(lowerFilter)) ||
-      (staff.role && staff.role.toLowerCase().includes(lowerFilter))
+      (staff.role && staff.role.toLowerCase().includes(lowerFilter)) ||
+      (staff.full_name && staff.full_name.toLowerCase().includes(lowerFilter))
     );
   });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.email) {
-      showToast('Vui lòng nhập Email', 'error');
-      return;
-    }
-    
-    setSubmitting(true);
-    try {
-      const payload = {
-        email: formData.email,
-        password: formData.password || (editingStaffId ? null : '123'),
-        role: formData.role,
-        major_codes: formData.role === 'STAFF_NGANH' ? formData.major_codes : [],
-        is_active: formData.is_active
-      };
 
-      const url = editingStaffId 
-        ? `${API_BASE}/api/staff/update/${editingStaffId}` 
-        : `${API_BASE}/api/staff/create`;
-      const method = editingStaffId ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      const data = await res.json();
-      if (res.ok) {
-        showToast(editingStaffId ? 'Cập nhật cán bộ thành công!' : 'Thêm cán bộ thành công!', 'success');
-        closeModal();
-        fetchStaff();
-      } else {
-        showToast(data.detail || 'Có lỗi xảy ra', 'error');
-      }
-    } catch (err) {
-      showToast('Lỗi mạng, không kết nối được server.', 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleDelete = async (id) => {
     setDeleteModal(prev => ({ ...prev, isDeleting: true }));
@@ -194,26 +147,18 @@ export default function StaffManagement() {
   };
 
   const openAddModal = () => {
-    setEditingStaffId(null);
-    setFormData({ email: '', password: '', role: 'STAFF_NGANH', major_codes: [], is_active: true });
+    setEditingStaffData(null);
     setIsModalOpen(true);
   };
 
   const openEditModal = (staff) => {
-    setEditingStaffId(staff.id);
-    setFormData({
-      email: staff.email,
-      password: '',
-      role: staff.role,
-      major_codes: staff.major_codes || [],
-      is_active: staff.is_active
-    });
+    setEditingStaffData(staff);
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingStaffId(null);
+    setEditingStaffData(null);
   };
 
   const toggleSelectAll = () => {
@@ -232,16 +177,7 @@ export default function StaffManagement() {
     }
   };
 
-  const handleToggleMajor = (majorCode) => {
-    setFormData(prev => {
-      const isSelected = prev.major_codes.includes(majorCode);
-      if (isSelected) {
-        return { ...prev, major_codes: prev.major_codes.filter(c => c !== majorCode) };
-      } else {
-        return { ...prev, major_codes: [...prev.major_codes, majorCode] };
-      }
-    });
-  };
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -259,7 +195,7 @@ export default function StaffManagement() {
               <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
               <input
                 type="text"
-                placeholder="Tìm Email hoặc Vai trò..."
+                placeholder="Tìm Tên, Email hoặc Vai trò..."
                 value={filterText}
                 onChange={(e) => setFilterText(e.target.value)}
                 style={{
@@ -305,7 +241,7 @@ export default function StaffManagement() {
                 <Plus size={18} />
                 Thêm mới
               </button>
-              
+
               <input
                 type="file"
                 accept=".xlsx, .xls"
@@ -347,16 +283,19 @@ export default function StaffManagement() {
               <thead>
                 <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                   <th style={{ padding: '14px 16px', width: '40px', textAlign: 'center' }}>
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       style={{ cursor: 'pointer' }}
                       checked={selectedRows.length > 0 && selectedRows.length === filteredStaff.length}
                       onChange={toggleSelectAll}
                     />
                   </th>
+                  <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Họ tên</th>
+                  <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Số điện thoại</th>
                   <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Email</th>
+                  <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Đơn vị</th>
                   <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Vai trò</th>
-                  <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Ngành phụ trách</th>
+                  <th style={{ padding: '14px 16px', textAlign: 'left', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Chương trình đào tạo</th>
                   <th style={{ padding: '14px 16px', textAlign: 'center', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Trạng thái</th>
                   <th style={{ padding: '14px 16px', textAlign: 'center', color: '#475569', fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase' }}>Thao tác</th>
                 </tr>
@@ -364,26 +303,46 @@ export default function StaffManagement() {
               <tbody>
                 {filteredStaff.length === 0 ? (
                   <tr>
-                    <td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                    <td colSpan="9" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
                       Không tìm thấy dữ liệu cán bộ.
                     </td>
                   </tr>
                 ) : (
                   filteredStaff.map(staff => (
-                    <tr key={staff.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s', backgroundColor: selectedRows.includes(staff.id) ? '#f0fdf4' : 'transparent' }} onMouseOver={e => {if(!selectedRows.includes(staff.id)) e.currentTarget.style.backgroundColor = '#f8fafc'}} onMouseOut={e => {if(!selectedRows.includes(staff.id)) e.currentTarget.style.backgroundColor = 'transparent'}}>
+                    <tr key={staff.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s', backgroundColor: selectedRows.includes(staff.id) ? '#f0fdf4' : 'transparent' }} onMouseOver={e => { if (!selectedRows.includes(staff.id)) e.currentTarget.style.backgroundColor = '#f8fafc' }} onMouseOut={e => { if (!selectedRows.includes(staff.id)) e.currentTarget.style.backgroundColor = 'transparent' }}>
                       <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           style={{ cursor: 'pointer' }}
                           checked={selectedRows.includes(staff.id)}
                           onChange={() => toggleSelectRow(staff.id)}
                         />
                       </td>
                       <td style={{ padding: '14px 16px', fontWeight: 500, color: '#0f172a' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <img
+                            src={staff.avatar_url ? `${API_BASE}${staff.avatar_url}` : 'https://ui-avatars.com/api/?name=' + (staff.full_name || staff.email)}
+                            alt="avatar"
+                            style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
+                          />
+                          {staff.full_name || '-'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px', color: '#334155' }}>
+                        {staff.phone || '-'}
+                      </td>
+                      <td style={{ padding: '14px 16px', color: '#334155' }}>
                         {staff.email}
                       </td>
+                      <td style={{ padding: '14px 16px', color: '#334155' }}>
+                        {institutes.find(inst => inst.institute_code === staff.unit_code)?.institute_name || staff.unit_code || '-'}
+                      </td>
                       <td style={{ padding: '14px 16px' }}>
-                        {staff.role === 'STAFF_TRUONG' ? (
+                        {staff.role === 'ADMIN' ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', backgroundColor: '#fef3c7', color: '#b45309', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                            <Shield size={14} /> CẤP HỆ THỐNG
+                          </span>
+                        ) : staff.role === 'STAFF_TRUONG' ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', backgroundColor: '#e0e7ff', color: '#4338ca', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
                             <Building size={14} /> CẤP TRƯỜNG
                           </span>
@@ -395,10 +354,10 @@ export default function StaffManagement() {
                       </td>
                       <td style={{ padding: '14px 16px' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {staff.major_codes && staff.major_codes.length > 0 ? (
-                            staff.major_codes.map(mc => (
-                              <span key={mc} style={{ display: 'inline-flex', padding: '2px 8px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 500 }}>
-                                {mc}
+                          {staff.managed_programs ? (
+                            staff.managed_programs.split(',').map((p, i) => (
+                              <span key={i} style={{ display: 'inline-flex', padding: '2px 8px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 500 }}>
+                                {p.trim()}
                               </span>
                             ))
                           ) : (
@@ -415,9 +374,9 @@ export default function StaffManagement() {
                         <button onClick={() => openEditModal(staff)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary-blue)', marginRight: '10px' }} title="Sửa">
                           <Edit size={18} />
                         </button>
-                        <button 
-                          onClick={() => setDeleteModal({ isOpen: true, type: 'single', id: staff.id, isDeleting: false })} 
-                          style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }} 
+                        <button
+                          onClick={() => setDeleteModal({ isOpen: true, type: 'single', id: staff.id, isDeleting: false })}
+                          style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
                           title="Xóa"
                         >
                           <Trash2 size={18} />
@@ -431,118 +390,15 @@ export default function StaffManagement() {
           )}
         </div>
       </div>
-      
-      {/* ADD NEW MODAL */}
-      {isModalOpen && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: '#fff', padding: '24px', borderRadius: '12px', width: '450px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.15)', maxHeight: '90vh', overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>{editingStaffId ? 'Sửa Cán bộ' : 'Thêm Cán bộ'}</h3>
-              <button onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
-                <X size={20} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.9rem', fontWeight: 500, color: '#475569' }}>Email (*)</label>
-                <input 
-                  type="email" 
-                  required
-                  disabled={!!editingStaffId}
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-                  placeholder="Ví dụ: nva@vinhuni.edu.vn"
-                />
-              </div>
-              
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.9rem', fontWeight: 500, color: '#475569' }}>Mật khẩu {editingStaffId && '(để trống nếu không đổi)'}</label>
-                <input 
-                  type="text" 
-                  value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-                  placeholder={editingStaffId ? "Nhập mật khẩu mới..." : "Mặc định: 123"}
-                />
-              </div>
 
-              <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.9rem', fontWeight: 500, color: '#475569' }}>Vai trò (*)</label>
-                <select 
-                  value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
-                  style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', boxSizing: 'border-box' }}
-                >
-                  <option value="STAFF_NGANH">Cấp Ngành (Phụ trách ngành cụ thể)</option>
-                  <option value="STAFF_TRUONG">Cấp Trường (Toàn quyền quản lý)</option>
-                </select>
-              </div>
-
-              {formData.role === 'STAFF_NGANH' && (
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.9rem', fontWeight: 500, color: '#475569' }}>Ngành phụ trách (chọn nhiều)</label>
-                  <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', backgroundColor: '#f8fafc' }}>
-                    {availableInstitutes.length === 0 ? (
-                      <span style={{ color: '#64748b', fontSize: '0.85rem' }}>Đang tải danh sách ngành...</span>
-                    ) : (
-                      availableInstitutes.map(inst => (
-                        <div key={inst.institute_code} style={{ marginBottom: '12px' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--primary-blue)', marginBottom: '6px', fontSize: '0.85rem' }}>{inst.institute_name}</div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px' }}>
-                            {inst.majors.map(m => (
-                              <label key={m.major_code} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', color: '#334155' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={formData.major_codes.includes(m.major_code)}
-                                  onChange={() => handleToggleMajor(m.major_code)}
-                                  style={{ cursor: 'pointer' }}
-                                />
-                                {m.major_name}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {editingStaffId && (
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 500, color: '#475569', cursor: 'pointer' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={formData.is_active}
-                      onChange={(e) => setFormData({...formData, is_active: e.target.checked})}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    Tài khoản đang hoạt động
-                  </label>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={closeModal} style={{ padding: '10px 16px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontWeight: 500 }}>
-                  Hủy
-                </button>
-                <button type="submit" disabled={submitting} style={{ padding: '10px 16px', borderRadius: '6px', border: 'none', background: 'var(--primary-blue)', color: '#fff', cursor: submitting ? 'not-allowed' : 'pointer', fontWeight: 500 }}>
-                  {submitting ? 'Đang lưu...' : (editingStaffId ? 'Cập nhật' : 'Thêm mới')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ADD/EDIT MODAL */}
+      <DraggableStaffModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        staffData={editingStaffData}
+        onSuccess={fetchStaff}
+        showToast={showToast}
+      />
 
       <DeleteConfirmModal
         isOpen={deleteModal.isOpen}

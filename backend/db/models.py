@@ -166,6 +166,7 @@ class Account(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[RoleEnum] = mapped_column(SQLEnum(RoleEnum), default=RoleEnum.CANDIDATE, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     def __repr__(self) -> str:
         return f"<Account username={self.username!r} role={self.role}>"
@@ -179,9 +180,15 @@ class StaffProfile(Base):
     staff_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.account_id", ondelete="CASCADE"), unique=True)
     
-    # role == STAFF_NGANH: major_codes lưu mảng mã ngành (VD: ["7480201", "7480101"])
-    # role == STAFF_TRUONG: major_codes lưu NULL hoặc []
-    major_codes: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    # Thông tin cá nhân
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    unit_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # role == STAFF_NGANH: managed_programs lưu chuỗi các mã chương trình phụ trách (VD: "7480201CN, 7480201CLC")
+    # role == STAFF_TRUONG: managed_programs lưu NULL hoặc rỗng
+    managed_programs: Mapped[str | None] = mapped_column(String(255), nullable=True)
     
     is_online: Mapped[bool] = mapped_column(Boolean, default=False)
     current_load: Mapped[int] = mapped_column(Integer, default=0)

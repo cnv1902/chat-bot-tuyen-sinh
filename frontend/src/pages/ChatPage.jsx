@@ -60,11 +60,78 @@ export default function ChatPage() {
     return saved ? JSON.parse(saved) : null;
   });
   const [showUserModal, setShowUserModal] = useState(false);
+  const [isHandoffMode, setIsHandoffMode] = useState(false);
+  const [supporterInfo, setSupporterInfo] = useState(null);
+
+  // Lấy thông tin user nếu có token
+  useEffect(() => {
+    const fetchMe = async () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUserInfo(data);
+          localStorage.setItem('user_info', JSON.stringify(data));
+        }
+      } catch (err) {
+        console.error("Lỗi lấy thông tin user", err);
+      }
+    };
+    fetchMe();
+  }, []);
 
   // Lưu messages vào LocalStorage mỗi khi có thay đổi
   useEffect(() => {
     localStorage.setItem('chat_messages', JSON.stringify(messages));
   }, [messages]);
+
+  // Kết nối SSE khi bật chế độ Handoff
+  useEffect(() => {
+    if (!isHandoffMode) return;
+    
+    const eventSource = new EventSource(`${API_BASE}/api/chat/stream/${sessionId}`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.event === "new_message") {
+          const { message } = payload.data;
+          setMessages(prev => [...prev, { role: 'assistant', content: message.text, isStaff: true }]);
+        } else if (payload.event === "handoff_ended") {
+          setIsHandoffMode(false);
+          setSupporterInfo(null);
+          setMessages(prev => [...prev, { role: 'assistant', content: payload.data.message }]);
+        }
+      } catch (err) {
+        console.error("Lỗi parse SSE Candidate", err);
+      }
+    };
+    
+    return () => {
+      eventSource.close();
+    };
+  }, [isHandoffMode, sessionId]);
+
+  const handleEndHandoff = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/end-handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      if (res.ok) {
+        setIsHandoffMode(false);
+        setSupporterInfo(null);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Bạn đã chủ động kết thúc trò chuyện với Cán bộ tư vấn. Hiện tại bạn đang trò chuyện với Trợ lý ảo AI.' }]);
+      }
+    } catch(err) {
+      console.error(err);
+    }
+  };
 
   const handleGoogleLogin = () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -130,11 +197,18 @@ export default function ChatPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: data.answer,
-          sources: data.sources
-        }]);
+        if (data.handoff_triggered) {
+          setIsHandoffMode(true);
+          setSupporterInfo(data.staff_info);
+        }
+        
+        if (data.answer) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.answer,
+            sources: data.sources
+          }]);
+        }
       } else {
         setMessages(prev => [...prev, {
           role: 'assistant',
@@ -157,6 +231,14 @@ export default function ChatPage() {
     const text = input;
     setInput('');
     handleSendMessage(text);
+  };
+
+  const getInitial = () => {
+    if (!userInfo) return 'U';
+    const nameStr = userInfo.full_name || userInfo.email || 'User';
+    const words = nameStr.trim().split(' ');
+    const lastWord = words[words.length - 1];
+    return lastWord.charAt(0).toUpperCase();
   };
 
   return (
@@ -270,18 +352,37 @@ export default function ChatPage() {
                   backgroundColor: 'rgba(255,255,255,0.2)',
                   color: '#ffffff',
                   border: '1px solid rgba(255,255,255,0.4)',
-                  padding: '8px 14px',
+                  padding: '4px 14px 4px 6px',
                   fontSize: '0.8rem',
                   fontWeight: 'bold',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  gap: '8px',
                   cursor: 'pointer',
                   borderRadius: '20px'
                 }}
               >
-                <User size={14} />
-                <span>{userInfo.full_name || userInfo.username?.split('@')[0]}</span>
+                <div style={{
+                  width: '24px', height: '24px',
+                  backgroundColor: '#ffffff',
+                  color: 'var(--primary-blue)',
+                  borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  overflow: 'hidden'
+                }}>
+                  {userInfo.avatar_url ? (
+                    <img
+                      src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${userInfo.avatar_url}`}
+                      alt="Avatar"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    getInitial()
+                  )}
+                </div>
+                <span>{userInfo.full_name || userInfo.email?.split('@')[0]}</span>
               </button>
             ) : (
               <button
@@ -324,8 +425,8 @@ export default function ChatPage() {
                 textAlign: 'left'
               }}>
                 <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '12px' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>{userInfo.full_name || 'Hồ sơ Thí sinh'}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{userInfo.username}</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>{userInfo.full_name || userInfo.email}</div>
+                  {userInfo.full_name && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{userInfo.email}</div>}
                   <div style={{ fontSize: '0.75rem', marginTop: '6px', display: 'inline-block', padding: '2px 8px', backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '4px', fontWeight: 'bold' }}>
                     Role: {userInfo.role}
                   </div>
@@ -388,6 +489,47 @@ export default function ChatPage() {
           `}</style>
         </header>
 
+        {isHandoffMode && supporterInfo && (
+          <div style={{
+            backgroundColor: '#e0f2fe',
+            borderBottom: '1px solid #bae6fd',
+            padding: '12px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            zIndex: 4,
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#0284c7', 
+                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem'
+              }}>
+                {supporterInfo.name?.charAt(0) || 'C'}
+              </div>
+              <div>
+                <div style={{ fontWeight: 'bold', color: '#0369a1', fontSize: '0.95rem' }}>Đang kết nối trực tiếp với: {supporterInfo.name}</div>
+                <div style={{ fontSize: '0.85rem', color: '#0284c7' }}>
+                  Chuyên viên tư vấn - {supporterInfo.major || 'Tuyển sinh chung'}
+                </div>
+              </div>
+            </div>
+            <button 
+              onClick={handleEndHandoff} 
+              style={{
+                padding: '8px 16px', backgroundColor: '#ef4444', color: 'white', border: 'none', 
+                borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseOver={e => e.currentTarget.style.backgroundColor = '#dc2626'}
+              onMouseOut={e => e.currentTarget.style.backgroundColor = '#ef4444'}
+            >
+              Kết thúc
+            </button>
+          </div>
+        )}
+
         {/* CONTAINER TIN NHẮN CHAT */}
         <div style={{
           flex: 1,
@@ -433,8 +575,8 @@ export default function ChatPage() {
                   }}>
                     {/* Tên người gửi */}
                     {!isUser && (
-                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                        Trợ lý Tuyển sinh AI
+                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: msg.isStaff ? '#0284c7' : 'var(--text-main)' }}>
+                        {msg.isStaff ? (supporterInfo?.name ? `Tư vấn viên ${supporterInfo.name}` : 'Tư vấn viên') : 'Trợ lý Tuyển sinh AI'}
                       </span>
                     )}
 

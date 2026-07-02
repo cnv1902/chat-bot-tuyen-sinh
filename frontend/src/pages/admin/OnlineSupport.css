@@ -1,0 +1,622 @@
+.zalo-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background-color: #f0f2f5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+/* =======================================================
+   LEFT SIDEBAR (CHAT LIST)
+   ======================================================= */
+.zalo-sidebar {
+  width: 340px;
+  min-width: 340px;
+  background-color: #ffffff;
+  border-right: 1px solid #e1e4e8;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.zalo-sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.zalo-sidebar-header h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 16px 0;
+}
+
+.zalo-search-box {
+  display: flex;
+  align-items: center;
+  background-color: #f3f4f6;
+  border-radius: 20px;
+  padding: 8px 16px;
+  margin-bottom: 16px;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.zalo-search-box:focus-within {
+  background-color: #ffffff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.zalo-search-box input {
+  border: none;
+  background: transparent;
+  width: 100%;
+  padding-left: 8px;
+  outline: none;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.zalo-search-box .search-icon {
+  color: #9ca3af;
+}
+
+.zalo-tabs {
+  display: flex;
+  gap: 12px;
+}
+
+.zalo-tab {
+  background: transparent;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 6px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zalo-tab:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.zalo-tab.active {
+  background-color: #ebf5ff;
+  color: #2563eb;
+}
+
+.zalo-tab .badge {
+  background-color: #ef4444;
+  color: white;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: bold;
+}
+
+.zalo-chat-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.zalo-chat-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.zalo-chat-list::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+
+.zalo-chat-item {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f9fafb;
+}
+
+.zalo-chat-item:hover {
+  background-color: #f8fafc;
+}
+
+.zalo-chat-item.active {
+  background-color: #e0f2fe;
+}
+
+.avatar-wrapper {
+  position: relative;
+  margin-right: 16px;
+}
+
+.avatar-wrapper img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.status-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+}
+
+.status-dot.online { background-color: #22c55e; }
+.status-dot.busy { background-color: #f59e0b; }
+
+.chat-preview {
+  flex: 1;
+  min-width: 0; /* Cho phép text-overflow hoạt động */
+}
+
+.chat-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.chat-preview-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-preview-header .time {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.chat-preview-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-preview-content p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.chat-preview-content p.unread-text {
+  font-weight: 700;
+  color: #111827;
+}
+
+.unread-badge {
+  background-color: #ef4444;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+/* =======================================================
+   MAIN CHAT AREA (MIDDLE)
+   ======================================================= */
+.zalo-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  position: relative;
+}
+
+.zalo-main-header {
+  height: 72px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e1e4e8;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+}
+
+.chat-user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.chat-user-info img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.chat-user-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.1rem;
+  color: #111827;
+}
+
+.chat-user-info span {
+  font-size: 0.85rem;
+  color: #10b981;
+}
+
+.chat-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.chat-actions button {
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.chat-actions button:hover {
+  background-color: #f3f4f6;
+  color: #3b82f6;
+}
+
+.zalo-message-area {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  background-color: #f8fafc;
+  background-image: radial-gradient(#e2e8f0 1px, transparent 0);
+  background-size: 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-date-divider {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.chat-date-divider span {
+  background-color: rgba(0,0,0,0.05);
+  color: #6b7280;
+  font-size: 0.8rem;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.message-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  max-width: 70%;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message-wrapper.me {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message-wrapper.them {
+  align-self: flex-start;
+}
+
+.msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message-wrapper.me .message-content {
+  align-items: flex-end;
+}
+
+.message-wrapper.them .message-content {
+  align-items: flex-start;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.message-wrapper.me .message-bubble {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.message-wrapper.them .message-bubble {
+  background-color: #ffffff;
+  color: #1f2937;
+  border-bottom-left-radius: 4px;
+  border: 1px solid #e5e7eb;
+}
+
+.message-time {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.read-receipt {
+  color: #3b82f6;
+}
+
+/* KHUNG NHẬP LIỆU */
+.zalo-input-area {
+  padding: 16px 24px;
+  background-color: #ffffff;
+  border-top: 1px solid #e1e4e8;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.input-toolbar {
+  display: flex;
+  gap: 12px;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.icon-btn:hover {
+  color: #4b5563;
+}
+
+.input-box {
+  display: flex;
+  align-items: center;
+  background-color: #f3f4f6;
+  border-radius: 24px;
+  padding: 8px 16px;
+}
+
+.input-box input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 1rem;
+  padding: 8px;
+  color: #1f2937;
+}
+
+.send-btn {
+  background-color: transparent;
+  color: #9ca3af;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.send-btn.active {
+  color: #3b82f6;
+  transform: scale(1.1);
+}
+
+.send-btn.active:hover {
+  background-color: #dbeafe;
+}
+
+.zalo-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8fafc;
+  color: #6b7280;
+}
+
+.zalo-empty-state h3 {
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+/* =======================================================
+   RIGHT PANEL (CANDIDATE INFO)
+   ======================================================= */
+.zalo-info-panel {
+  width: 300px;
+  min-width: 300px;
+  background-color: #ffffff;
+  border-left: 1px solid #e1e4e8;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.info-header {
+  padding: 24px;
+  border-bottom: 1px solid #f0f2f5;
+  text-align: center;
+}
+
+.info-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #1f2937;
+}
+
+.info-profile {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.info-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.info-profile h2 {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  color: #111827;
+}
+
+.tags {
+  display: flex;
+  gap: 8px;
+}
+
+.tag {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.tag.primary {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.info-sections {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.info-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #374151;
+  font-size: 0.95rem;
+}
+
+.info-row svg {
+  color: #9ca3af;
+}
+
+.ai-history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+}
+
+.ai-history-item svg {
+  color: #3b82f6;
+  margin-top: 2px;
+}
+
+.ai-history-item p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.action-buttons button {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background-color: #ef4444;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2);
+}
+
+.btn-secondary {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.btn-secondary:hover {
+  background-color: #e5e7eb;
+}

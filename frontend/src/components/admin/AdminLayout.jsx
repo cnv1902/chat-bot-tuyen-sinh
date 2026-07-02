@@ -27,6 +27,7 @@ export default function AdminLayout() {
         <AdminNavbar 
           isMobileMenuOpen={isMobileMenuOpen} 
           setIsMobileMenuOpen={setIsMobileMenuOpen} 
+          showToast={showToast}
         />
 
         {/* PAGE CONTENT */}

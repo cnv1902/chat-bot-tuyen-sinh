@@ -269,7 +269,10 @@ async def approve_qa_staging(
         raise HTTPException(status_code=500, detail="Lỗi hệ thống khi duyệt Q&A")
 
 @router.get("/qa-approved", response_model=dict)
-async def get_qa_approved():
+async def get_qa_approved(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100)
+):
     """Lấy danh sách các câu hỏi đã duyệt từ Qdrant."""
     try:
         client = _get_client()
@@ -295,7 +298,13 @@ async def get_qa_approved():
                     "created_at": r.payload.get("created_at", "")
                 })
 
-        return {"data": data, "total": len(data)}
+        # Sắp xếp theo ngày tạo (mới nhất lên đầu)
+        data.sort(key=lambda x: x["created_at"], reverse=True)
+        
+        # Cắt mảng theo phân trang
+        paginated_data = data[skip : skip + limit]
+
+        return {"data": paginated_data, "total": len(data)}
     except Exception as e:
         logger.error("[AdminQA] Lỗi lấy danh sách QA Approved: %s", str(e))
         raise HTTPException(status_code=500, detail="Lỗi hệ thống khi lấy danh sách đã duyệt")
